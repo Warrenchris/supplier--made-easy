@@ -1,8 +1,14 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { initDb, get, run } from './db.js';
 import apiRouter from './api.js';
 import { processListingMatching } from './matchingEngine.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -11,6 +17,16 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api', apiRouter);
+
+// Serve static frontend files in production if dist/ exists
+const distPath = path.join(__dirname, '../dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 async function seedDefaultDataset() {
   const existingCount = await get(`SELECT COUNT(*) as cnt FROM suppliers`);
@@ -62,7 +78,7 @@ async function startServer() {
   await initDb();
   await seedDefaultDataset();
   app.listen(PORT, () => {
-    console.log(`Supplier Intelligence REST API running at http://localhost:${PORT}/api`);
+    console.log(`Supplier Intelligence Engine running at http://localhost:${PORT}`);
   });
 }
 
