@@ -7,6 +7,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Database files
+server/procurement_db.json
+*.db
+*.sqlite
+
 # Node modules
 node_modules/
 dist/
