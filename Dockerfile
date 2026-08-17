@@ -26,6 +26,9 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY server ./server
 
+# Ensure non-root node user has full write permissions
+RUN chown -R node:node /app
+
 # Non-root container user
 USER node
 
