@@ -4,7 +4,13 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dbFilePath = path.join(__dirname, 'procurement_db.json');
+
+// Use server/data/ directory for persistence (Docker volume mount point)
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+const dbFilePath = path.join(dataDir, 'procurement_db.json');
 
 let store = {
   suppliers: [],
@@ -12,11 +18,17 @@ let store = {
   raw_listings: [],
   canonical_products: [],
   supplier_offers: [],
-  price_histories: [],
+  price_observations: [],
   match_suggestions: [],
   exchange_rates: [],
   users: [],
-  audit_logs: []
+  audit_logs: [],
+  procurement_decisions: [],
+  storefront_settings: {
+    defaultPricingStrategy: 'markup',
+    defaultMarginRate: 0.30,
+    productOverrides: {}
+  }
 };
 
 function saveStore() {
@@ -31,14 +43,42 @@ function loadStore() {
   if (fs.existsSync(dbFilePath)) {
     try {
       const data = fs.readFileSync(dbFilePath, 'utf8');
-      store = { ...store, ...JSON.parse(data) };
+      const loaded = JSON.parse(data);
+      store = {
+        ...store,
+        ...loaded,
+        // Ensure new tables exist even if loading old data
+        supplier_offers: loaded.supplier_offers || [],
+        price_observations: loaded.price_observations || [],
+        procurement_decisions: loaded.procurement_decisions || [],
+        storefront_settings: loaded.storefront_settings || store.storefront_settings
+      };
     } catch (err) {
       console.error("Error reading database file, starting fresh:", err);
     }
   }
 }
 
+// Migrate old db file location if it exists
+function migrateOldDbFile() {
+  const oldPath = path.join(__dirname, 'procurement_db.json');
+  if (fs.existsSync(oldPath) && !fs.existsSync(dbFilePath)) {
+    try {
+      fs.copyFileSync(oldPath, dbFilePath);
+      fs.unlinkSync(oldPath);
+      console.log("Migrated procurement_db.json to server/data/ directory.");
+    } catch (err) {
+      console.error("Migration warning:", err.message);
+    }
+  }
+}
+
+export function getStore() {
+  return store;
+}
+
 export async function initDb() {
+  migrateOldDbFile();
   loadStore();
 
   // Seed default Exchange Rates if empty
@@ -59,7 +99,7 @@ export async function initDb() {
   }
 
   saveStore();
-  console.log("Transactional Procurement Database initialized with 10 core tables.");
+  console.log("Procurement Database initialized (10 core tables + 3 intelligence tables).");
 }
 
 export async function query(sql, params = []) {
@@ -135,12 +175,30 @@ export async function query(sql, params = []) {
     });
   }
 
-  if (norm.includes('from price_histories')) {
-    let list = [...store.price_histories];
-    if (params.length === 1 && norm.includes('where canonical_product_id = ?')) {
+  if (norm.includes('from price_observations') || norm.includes('from price_histories')) {
+    let list = [...store.price_observations];
+    if (params.length >= 1 && norm.includes('where canonical_product_id = ?')) {
       list = list.filter((h) => h.canonical_product_id === params[0]);
     }
+    if (params.length >= 2 && norm.includes('and supplier_id = ?')) {
+      list = list.filter((h) => h.supplier_id === params[1]);
+    }
     return list;
+  }
+
+  if (norm.includes('from supplier_offers')) {
+    let list = [...store.supplier_offers];
+    if (params.length >= 1 && norm.includes('where canonical_product_id = ?')) {
+      list = list.filter((o) => o.canonical_product_id === params[0]);
+    }
+    return list.map((o) => {
+      const s = store.suppliers.find((sp) => sp.id === o.supplier_id) || {};
+      return { ...o, supplier: s };
+    });
+  }
+
+  if (norm.includes('from procurement_decisions')) {
+    return [...store.procurement_decisions].reverse();
   }
 
   if (norm.includes('from audit_logs')) {
@@ -178,6 +236,11 @@ export async function get(sql, params = []) {
 
   if (norm.includes('from canonical_products')) {
     if (norm.includes('where id = ?')) return store.canonical_products.find((c) => c.id === params[0]);
+  }
+
+  if (norm.includes('from procurement_decisions')) {
+    if (norm.includes('where id = ?')) return store.procurement_decisions.find((d) => d.id === params[0]);
+    if (norm.includes('where order_id = ?')) return store.procurement_decisions.find((d) => d.order_id === params[0]);
   }
 
   const results = await query(sql, params);
@@ -221,6 +284,7 @@ export async function run(sql, params = []) {
       parsed_price: params[8],
       parsed_currency: params[9],
       parsed_stock_status: params[10],
+      parsed_stock_qty: params[11] || 0,
       canonical_product_id: null,
       match_confidence: null,
       match_status: 'unmatched',
@@ -233,8 +297,44 @@ export async function run(sql, params = []) {
       brand: params[2] || 'Generic',
       category: params[3] || 'Electronics',
       model_number: params[4] || '',
-      attributes: params[5] || '{}',
-      created_at: new Date().toISOString()
+      normalized_name: params[5] || '',
+      specifications: params[6] || {},
+      identifiers: params[7] || {},
+      attributes: params[8] || {},
+      match_confidence: params[9] || 1.0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+  } else if (norm.startsWith('insert into supplier_offers')) {
+    store.supplier_offers.push({
+      id: params[0],
+      canonical_product_id: params[1],
+      supplier_id: params[2],
+      raw_listing_id: params[3],
+      supplier_sku: params[4],
+      supplier_name: params[5],
+      cost: params[6],
+      currency: params[7],
+      cost_in_base_currency: params[8],
+      quantity_available: params[9] || 0,
+      stock_status: params[10] || 'in_stock',
+      warranty_terms: params[11] || '',
+      source_import_id: params[12] || null,
+      updated_at: new Date().toISOString()
+    });
+  } else if (norm.startsWith('insert into price_observations')) {
+    store.price_observations.push({
+      id: params[0],
+      supplier_id: params[1],
+      canonical_product_id: params[2],
+      price: params[3],
+      currency: params[4],
+      price_in_base_currency: params[5],
+      stock_quantity: params[6] || 0,
+      stock_status: params[7] || 'in_stock',
+      captured_at: params[8] || new Date().toISOString(),
+      source_import_id: params[9] || null,
+      source: params[10] || 'excel_import'
     });
   } else if (norm.startsWith('insert into match_suggestions')) {
     store.match_suggestions.push({
@@ -264,6 +364,20 @@ export async function run(sql, params = []) {
       before: params[5] || '{}',
       after: params[6] || '{}',
       created_at: new Date().toISOString()
+    });
+  } else if (norm.startsWith('insert into procurement_decisions')) {
+    store.procurement_decisions.push({
+      id: params[0],
+      order_id: params[1],
+      canonical_product_id: params[2],
+      requested_quantity: params[3],
+      optimization_mode: params[4],
+      allocations: params[5],
+      total_acquisition_cost: params[6],
+      supplier_scores_snapshot: params[7],
+      decided_at: params[8] || new Date().toISOString(),
+      status: params[9] || 'draft',
+      created_by: params[10] || 'sys'
     });
   } else if (norm.startsWith('update raw_listings')) {
     const targetId = params[params.length - 1];
@@ -295,6 +409,19 @@ export async function run(sql, params = []) {
     if (item) {
       item.rate_to_base = params[0];
       item.as_of_date = new Date().toISOString();
+    }
+  } else if (norm.startsWith('update supplier_offers')) {
+    const item = store.supplier_offers.find((o) => o.id === params[params.length - 1]);
+    if (item) {
+      if (params[0] !== undefined) item.cost = params[0];
+      if (params[1] !== undefined) item.cost_in_base_currency = params[1];
+      if (params[2] !== undefined) item.quantity_available = params[2];
+      item.updated_at = new Date().toISOString();
+    }
+  } else if (norm.startsWith('update procurement_decisions')) {
+    const item = store.procurement_decisions.find((d) => d.id === params[params.length - 1]);
+    if (item && params[0]) {
+      item.status = params[0];
     }
   }
 
