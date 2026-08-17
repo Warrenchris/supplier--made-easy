@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # Database files
+server/data/
 server/procurement_db.json
 *.db
 *.sqlite
@@ -15,10 +16,10 @@ server/procurement_db.json
 # Node modules
 node_modules/
 dist/
-dist-ssr/
+dist-ssr
 *.local
 
-# Editor files
+# Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
