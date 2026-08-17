@@ -3,7 +3,7 @@ import { query, get, run } from './db.js';
 import { convertToBaseCurrency, getExchangeRates } from './fxService.js';
 
 /**
- * Product Identity Engine
+ * Product Identity Engine (v3.1 Adversarial-Hardened)
  * 
  * Pipeline: Supplier Listing → Normalize → Extract Brand → Extract Model
  *           → Extract SKU/MPN → Extract Specifications → Find Canonical Product
@@ -19,29 +19,41 @@ const KNOWN_BRANDS = [
 ];
 
 const MODEL_PATTERNS = [
-  /\b(990\s*EVO\s*(?:PLUS)?)/i,
-  /\b(980\s*PRO)/i,
-  /\b(970\s*EVO\s*(?:PLUS)?)/i,
-  /\b(870\s*EVO)/i,
-  /\b(XPS\s*\d+)/i,
-  /\b(LATITUDE\s*\d+)/i,
-  /\b(INSPIRON\s*\d+)/i,
-  /\b(M[34]\s*(?:PRO|MAX)?)/i,
-  /\b(MX\s*MASTER\s*3S?)/i,
-  /\b(MX\s*KEYS\s*(?:S|MINI)?)/i,
-  /\b(MACBOOK\s*(?:PRO|AIR)\s*\d+)/i,
-  /\b(THINKPAD\s*[A-Z]\d+)/i,
-  /\b(ELITEBOOK\s*\d+)/i,
-  /\b(GALAXY\s*[AS]\d+)/i,
-  /\b(IPHONE\s*\d+\s*(?:PRO|PLUS|MAX)?)/i,
-  /\b(IPAD\s*(?:PRO|AIR|MINI)?)/i,
-  /\b(SURFACE\s*(?:PRO|LAPTOP|GO)\s*\d*)/i,
-  /\b(T\d{3,4}[A-Z]*)/i,
-  /\b(VIEWFINITY\s*[A-Z]*\d*)/i,
+  // 990 Series (Specific to General)
+  /\b(990\s*EVO\s*(?:\+|PLUS))\b/i,
+  /\b(990\s*PRO\s*(?:PLUS|\+)?)\b/i,
+  /\b(990\s*EVO)\b/i,
+  // 980 Series
+  /\b(980\s*PRO)\b/i,
+  /\b(980\s*EVO)\b/i,
+  /\b(980)\b/i,
+  // 970 Series
+  /\b(970\s*EVO\s*(?:\+|PLUS))\b/i,
+  /\b(970\s*EVO)\b/i,
+  /\b(970\s*PRO)\b/i,
+  // 870 Series
+  /\b(870\s*EVO)\b/i,
+  /\b(870\s*QVO)\b/i,
+  // Laptops & Peripherals
+  /\b(XPS\s*\d{2,4})\b/i,
+  /\b(LATITUDE\s*\d{3,4})\b/i,
+  /\b(INSPIRON\s*\d{3,4})\b/i,
+  /\b(MACBOOK\s*(?:PRO|AIR)\s*\d+)\b/i,
+  /\b(M[1234]\s*(?:PRO|MAX|ULTRA)?)\b/i,
+  /\b(MX\s*MASTER\s*3S?)\b/i,
+  /\b(MX\s*KEYS\s*(?:S|MINI)?)\b/i,
+  /\b(THINKPAD\s*[A-Z]\d{2,3})\b/i,
+  /\b(ELITEBOOK\s*\d{3,4})\b/i,
+  /\b(GALAXY\s*[AS]\d{1,2})\b/i,
+  /\b(IPHONE\s*\d{1,2}\s*(?:PRO|PLUS|MAX)?)\b/i,
+  /\b(IPAD\s*(?:PRO|AIR|MINI)?)\b/i,
+  /\b(SURFACE\s*(?:PRO|LAPTOP|GO)\s*\d*)\b/i,
+  /\b(T\d{3,4}[A-Z]*)\b/i,
+  /\b(VIEWFINITY\s*[A-Z]*\d*)\b/i,
 ];
 
 const CATEGORY_KEYWORDS = {
-  'SSD': ['ssd', 'solid state', 'nvme', 'm.2', 'sata drive'],
+  'SSD': ['ssd', 'solid state', 'nvme', 'm.2', 'sata drive', 'pcie 4.0', 'pcie 5.0'],
   'HDD': ['hdd', 'hard drive', 'hard disk'],
   'Laptop': ['laptop', 'notebook', 'ultrabook', 'macbook', 'thinkpad', 'xps', 'latitude', 'elitebook', 'inspiron'],
   'Mouse': ['mouse', 'mice', 'trackpad', 'mx master', 'mx keys'],
@@ -63,6 +75,7 @@ const CATEGORY_KEYWORDS = {
 export function normalizeName(name) {
   if (!name) return "";
   return String(name).trim().toLowerCase()
+    .replace(/\+/g, " plus ")
     .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -76,11 +89,10 @@ export function normalizeSku(sku) {
 // ─── Extraction Functions ───────────────────────────────────────────────────
 
 export function extractBrand(text) {
-  const upper = String(text).toUpperCase();
+  const upper = String(text || '').toUpperCase();
   const brand = KNOWN_BRANDS.find((b) => upper.includes(b));
   if (brand) return brand === "WD" ? "WESTERN DIGITAL" : brand;
 
-  // Try to detect brand from common patterns like "Brand Model"
   const firstWord = upper.split(/[\s-]+/)[0];
   if (firstWord && firstWord.length >= 2 && KNOWN_BRANDS.includes(firstWord)) {
     return firstWord;
@@ -89,18 +101,18 @@ export function extractBrand(text) {
 }
 
 export function extractModel(text) {
-  const upper = String(text).toUpperCase();
+  const upper = String(text || '').toUpperCase().replace(/\+/g, ' PLUS ');
   for (const pattern of MODEL_PATTERNS) {
     const match = upper.match(pattern);
     if (match) {
-      return match[1].replace(/\s+/g, ' ').trim();
+      return match[1].replace(/\s+/g, ' ').trim().replace(/\+$/, 'PLUS').trim();
     }
   }
   return null;
 }
 
 export function extractCategory(text) {
-  const lower = String(text).toLowerCase();
+  const lower = String(text || '').toLowerCase();
   for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
     if (keywords.some((kw) => lower.includes(kw))) {
       return category;
@@ -110,7 +122,7 @@ export function extractCategory(text) {
 }
 
 export function extractSpecifications(text) {
-  const upper = String(text).toUpperCase();
+  const upper = String(text || '').toUpperCase();
   const specs = {};
 
   // Capacity (storage/RAM)
@@ -120,7 +132,7 @@ export function extractSpecifications(text) {
   }
 
   // Interface
-  const intMatch = upper.match(/\b(NVME|SATA|M\.2|PCIE\s*(?:4\.0|5\.0|GEN\s*\d)?|USB-C|THUNDERBOLT|HDMI|DISPLAYPORT|USB\s*3\.\d)\b/);
+  const intMatch = upper.match(/\b(NVME|SATA|M\.2|PCIE\s*(?:4\.0|5\.0|GEN\s*[45])?|GEN\s*[45]|USB-C|THUNDERBOLT|HDMI|DISPLAYPORT|USB\s*3\.\d)\b/);
   if (intMatch) {
     specs.interface = intMatch[1].trim();
   }
@@ -135,12 +147,6 @@ export function extractSpecifications(text) {
   const colorMatch = upper.match(/\b(BLACK|WHITE|SILVER|GRAY|GREY|GRAPHITE|SPACE\s*GRAY|MIDNIGHT|STARLIGHT|GOLD|BLUE|RED|GREEN|PINK)\b/);
   if (colorMatch) {
     specs.color = colorMatch[1].replace(/\s+/g, ' ').trim();
-  }
-
-  // Screen size
-  const screenMatch = upper.match(/\b(\d+(?:\.\d+)?)\s*(?:INCH|")\b/);
-  if (screenMatch) {
-    specs.screenSize = `${screenMatch[1]}"`;
   }
 
   // Processor
@@ -160,10 +166,13 @@ export function extractIdentifiers(rawSku, rawName) {
     identifiers.mpn = normalizeSku(rawSku);
   }
 
-  // Try to extract MPN patterns (e.g. MZ-V9S1T0BW, MRX33LL/A)
-  const mpnMatch = String(rawName).match(/\b([A-Z]{2,3}[-]?[A-Z0-9]{3,}[A-Z0-9/]*)\b/i);
+  // Try to extract MPN patterns (e.g. MZ-V9S1T0BW, MRX33LL/A, MZV9S1T0BW)
+  const mpnMatch = String(rawName || '').match(/\b([A-Z]{2,3}[-]?[A-Z0-9]{3,}[A-Z0-9/]*)\b/i);
   if (mpnMatch && mpnMatch[1].length >= 6) {
     identifiers.detectedMpn = mpnMatch[1].toUpperCase();
+    if (!identifiers.mpn) {
+      identifiers.mpn = normalizeSku(mpnMatch[1]);
+    }
   }
 
   return identifiers;
@@ -171,9 +180,6 @@ export function extractIdentifiers(rawSku, rawName) {
 
 // ─── Main Pipeline ──────────────────────────────────────────────────────────
 
-/**
- * Normalize a raw listing into structured product identity data.
- */
 export function normalizeListing(rawListing) {
   const rawName = rawListing.raw_name || rawListing.name || '';
   const rawSku = rawListing.raw_sku || rawListing.sku || '';
@@ -190,11 +196,12 @@ export function normalizeListing(rawListing) {
 
 /**
  * Calculate similarity between a normalized listing and a canonical product.
+ * Adversarially hardened against false positives for different models.
  */
 export function calculateSimilarity(normalized, canonical) {
   let score = 0;
   const signals = [];
-  const maxScore = 5; // total signal points available
+  const maxScore = 5;
 
   const cBrand = (canonical.brand || '').toUpperCase();
   const cModel = (canonical.model_number || '').toUpperCase();
@@ -212,35 +219,67 @@ export function calculateSimilarity(normalized, canonical) {
   if (normalized.brand && cBrand && normalized.brand.toUpperCase() === cBrand) {
     score += 1.0;
     signals.push(`Brand match: ${normalized.brand}`);
+  } else if (normalized.brand && cBrand && normalized.brand.toUpperCase() !== cBrand) {
+    // Conflicting brand penalty
+    return { confidence: 0.0, signals: [`Conflicting brands: ${normalized.brand} vs ${cBrand}`], explanation: 'Conflicting brands' };
   }
 
-  // 2. Model match (1.5 points)
+  // 2. Model match (1.5 points) — STRICT distinction between EVO, EVO PLUS, PRO, etc.
   if (normalized.model && cModel) {
     const normModel = normalized.model.toUpperCase().replace(/\s+/g, '');
     const canModel = cModel.replace(/\s+/g, '');
-    if (normModel === canModel || normModel.includes(canModel) || canModel.includes(normModel)) {
+
+    if (normModel === canModel) {
       score += 1.5;
-      signals.push(`Model match: ${normalized.model}`);
+      signals.push(`Exact model match: ${normalized.model}`);
+    } else {
+      // Check if one has PLUS/PRO/MAX/ULTRA and the other doesn't
+      const hasModifierNorm = /\b(PLUS|PRO|MAX|ULTRA|MINI|TI|SUPER)\b/i.test(normalized.model);
+      const hasModifierCan = /\b(PLUS|PRO|MAX|ULTRA|MINI|TI|SUPER)\b/i.test(cModel);
+
+      if (hasModifierNorm !== hasModifierCan) {
+        // One is e.g. EVO and other is EVO PLUS -> STRICT REJECTION
+        return {
+          confidence: 0.20,
+          signals: [`Model variant conflict: ${normalized.model} vs ${cModel}`],
+          explanation: `Different model variants (${normalized.model} vs ${cModel})`
+        };
+      } else if (normModel.includes(canModel) || canModel.includes(normModel)) {
+        score += 0.75;
+        signals.push(`Partial model match: ${normalized.model} ≈ ${cModel}`);
+      }
     }
   }
 
   // 3. SKU/MPN match (1.5 points)
-  if (normalized.identifiers.mpn && cIds.mpn) {
-    if (normalized.identifiers.mpn === cIds.mpn) {
+  const normMpn = normalized.identifiers.mpn || normalized.identifiers.detectedMpn;
+  const canMpn = cIds.mpn || cIds.detectedMpn;
+
+  if (normMpn && canMpn) {
+    if (normMpn === canMpn) {
       score += 1.5;
-      signals.push(`MPN exact match: ${normalized.identifiers.mpn}`);
-    } else if (normalized.identifiers.mpn.includes(cIds.mpn) || cIds.mpn.includes(normalized.identifiers.mpn)) {
+      signals.push(`MPN exact match: ${normMpn}`);
+    } else if (normMpn.includes(canMpn) || canMpn.includes(normMpn)) {
       score += 1.0;
-      signals.push(`MPN partial match: ${normalized.identifiers.mpn} ≈ ${cIds.mpn}`);
+      signals.push(`MPN partial overlap: ${normMpn} ≈ ${canMpn}`);
     }
   }
 
   // 4. Capacity match (0.5 points)
   const normCap = (normalized.specifications.capacity || '').toUpperCase();
   const canCap = (cSpecs.capacity || cAttrs.capacity || '').toUpperCase();
-  if (normCap && canCap && normCap === canCap) {
-    score += 0.5;
-    signals.push(`Capacity match: ${normCap}`);
+  if (normCap && canCap) {
+    if (normCap === canCap) {
+      score += 0.5;
+      signals.push(`Capacity match: ${normCap}`);
+    } else {
+      // Conflicting capacity -> heavily penalize
+      return {
+        confidence: 0.15,
+        signals: [`Capacity mismatch: ${normCap} vs ${canCap}`],
+        explanation: `Different capacities (${normCap} vs ${canCap})`
+      };
+    }
   }
 
   // 5. Category match (0.5 points)
@@ -260,15 +299,11 @@ export function calculateSimilarity(normalized, canonical) {
     signals,
     explanation,
     brandMatch: normalized.brand && cBrand && normalized.brand.toUpperCase() === cBrand,
-    modelMatch: !!signals.find((s) => s.startsWith('Model match')),
+    modelMatch: !!signals.find((s) => s.includes('model match')),
     skuMatch: !!signals.find((s) => s.includes('MPN'))
   };
 }
 
-/**
- * Resolve a normalized listing to a canonical product.
- * Returns the best match with confidence and action recommendation.
- */
 export async function resolveCanonicalProduct(normalized) {
   const allProducts = await productRepo.findAll({ excludeMerged: true });
 
@@ -315,39 +350,26 @@ export async function resolveCanonicalProduct(normalized) {
   };
 }
 
-/**
- * Full pipeline: Process a raw listing through the Product Identity Engine.
- * Creates canonical products, supplier offers, and price observations.
- */
 export async function processListing(rawListingId) {
   const listing = await get(`SELECT * FROM raw_listings WHERE id = ?`, [rawListingId]);
   if (!listing) return;
 
-  // Step 1: Normalize the listing
   const normalized = normalizeListing(listing);
-
-  // Step 2: Resolve to canonical product
   const resolution = await resolveCanonicalProduct(normalized);
 
-  // Step 3: Get exchange rate for price conversion
   const rates = await getExchangeRates();
   const rate = rates[listing.parsed_currency] || rates['USD'] || 129.50;
   const priceInBase = listing.parsed_price * rate;
 
-  // Step 4: Parse stock quantity
   const stockQty = parseStockQty(listing.raw_stock_text);
-
-  // Step 5: Get supplier info
   const supplier = await get(`SELECT * FROM suppliers WHERE id = ?`, [listing.supplier_id]);
 
   if (resolution.action === 'auto_confirm') {
-    // Link to existing canonical product
     await run(
       `UPDATE raw_listings SET canonical_product_id = ?, match_confidence = ?, match_status = 'confirmed' WHERE id = ?`,
       [resolution.canonicalProduct.id, resolution.confidence, listing.id]
     );
 
-    // Upsert supplier offer
     await offerRepo.upsert({
       canonical_product_id: resolution.canonicalProduct.id,
       supplier_id: listing.supplier_id,
@@ -363,7 +385,6 @@ export async function processListing(rawListingId) {
       source_import_id: listing.supplier_import_id
     });
 
-    // Record immutable price observation
     await priceObservationRepo.record({
       supplier_id: listing.supplier_id,
       canonical_product_id: resolution.canonicalProduct.id,
@@ -376,7 +397,6 @@ export async function processListing(rawListingId) {
       source: 'excel_import'
     });
 
-    // Audit log
     await run(
       `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, before, after)
        VALUES (?, 'sys_auto', 'AUTO_CONFIRM_MATCH', 'raw_listing', ?, '{}', ?)`,
@@ -392,7 +412,6 @@ export async function processListing(rawListingId) {
     );
 
   } else if (resolution.action === 'review_queue') {
-    // Surface in Match Review Queue
     const sugId = `sug_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const existingListings = await query(
       `SELECT * FROM raw_listings WHERE r.canonical_product_id = ?`,
@@ -427,7 +446,6 @@ export async function processListing(rawListingId) {
     );
 
   } else {
-    // Create new Canonical Product
     const newProduct = await productRepo.create({
       canonical_name: listing.raw_name,
       brand: normalized.brand || 'Generic',
@@ -445,7 +463,6 @@ export async function processListing(rawListingId) {
       [newProduct.id, listing.id]
     );
 
-    // Create supplier offer
     await offerRepo.upsert({
       canonical_product_id: newProduct.id,
       supplier_id: listing.supplier_id,
@@ -461,7 +478,6 @@ export async function processListing(rawListingId) {
       source_import_id: listing.supplier_import_id
     });
 
-    // Record initial price observation
     await priceObservationRepo.record({
       supplier_id: listing.supplier_id,
       canonical_product_id: newProduct.id,
@@ -475,8 +491,6 @@ export async function processListing(rawListingId) {
     });
   }
 }
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function parseStockQty(stockText) {
   if (!stockText) return 0;
