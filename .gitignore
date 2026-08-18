@@ -13,6 +13,11 @@ server/procurement_db.json
 *.db
 *.sqlite
 
+# Environment secrets
+.env
+.env.*
+*.env
+
 # Node modules
 node_modules/
 dist/
