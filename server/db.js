@@ -81,20 +81,10 @@ export async function initDb() {
   migrateOldDbFile();
   loadStore();
 
-  // Seed default Exchange Rates if empty
+  // Base currency KES initialization if exchange rates table is empty
   if (store.exchange_rates.length === 0) {
     store.exchange_rates = [
-      { id: 'fx_1', currency_code: 'KES', rate_to_base: 1.0, as_of_date: new Date().toISOString() },
-      { id: 'fx_2', currency_code: 'USD', rate_to_base: 129.50, as_of_date: new Date().toISOString() },
-      { id: 'fx_3', currency_code: 'EUR', rate_to_base: 140.20, as_of_date: new Date().toISOString() },
-      { id: 'fx_4', currency_code: 'GBP', rate_to_base: 164.80, as_of_date: new Date().toISOString() }
-    ];
-  }
-
-  // Seed initial Admin User if empty
-  if (store.users.length === 0) {
-    store.users = [
-      { id: 'usr_1', name: 'Senior Procurement Buyer', role: 'admin', email: 'buyer@supplier-made-easy.co.ke' }
+      { id: 'fx_kes', currency_code: 'KES', rate_to_base: 1.0, as_of_date: new Date().toISOString() }
     ];
   }
 

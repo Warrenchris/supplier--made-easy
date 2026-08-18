@@ -3,11 +3,12 @@ import { Sliders, RefreshCw, DollarSign, ShieldAlert, FileText, Check, Download,
 
 export default function AdminSettings() {
   const [weights, setWeights] = useState({
-    w1_price: 0.40,
-    w2_stock: 0.25,
+    w1_price: 0.30,
+    w2_stock: 0.20,
     w3_reliability: 0.20,
     w4_delivery: 0.10,
-    w5_warranty: 0.05
+    w5_warranty: 0.10,
+    w6_freshness: 0.10
   });
   const [fxRates, setFxRates] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
@@ -103,7 +104,8 @@ export default function AdminSettings() {
             ['w2_stock', 'Stock Availability & Quantity', weights.w2_stock],
             ['w3_reliability', 'Supplier Historical Reliability', weights.w3_reliability],
             ['w4_delivery', 'Delivery Speed & Lead Time', weights.w4_delivery],
-            ['w5_warranty', 'Warranty Terms & Support', weights.w5_warranty]
+            ['w5_warranty', 'Warranty Terms & Support', weights.w5_warranty],
+            ['w6_freshness', 'Data Freshness & Recent Pricelists', weights.w6_freshness]
           ].map(([key, label, val]) => (
             <div key={key} style={{ marginBottom: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>

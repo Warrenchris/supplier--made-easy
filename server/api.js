@@ -45,7 +45,8 @@ router.get('/canonical-products', async (req, res) => {
           [p.id]
         );
         enrichedOffers = listings.map((l) => {
-          const rate = rates[l.parsed_currency] || 129.50;
+          const curr = (l.parsed_currency || 'KES').toUpperCase();
+          const rate = curr === 'KES' ? 1.0 : (rates[curr] !== undefined ? rates[curr] : (rates['USD'] || 1.0));
           const supplier = suppliers.find((s) => s.id === l.supplier_id) || {};
           return {
             id: `off_${l.id}`,

@@ -153,7 +153,9 @@ async function startServer() {
   }));
 
   await initDb();
-  await seedDefaultDataset();
+  if (process.env.SEED_DEFAULT_DATA === 'true') {
+    await seedDefaultDataset();
+  }
 
   server = app.listen(PORT, () => {
     console.log(`Supplier Intelligence Engine v3.0 running at http://localhost:${PORT}`);

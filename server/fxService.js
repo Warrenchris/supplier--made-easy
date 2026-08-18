@@ -9,10 +9,12 @@ export async function getExchangeRates() {
   return rates;
 }
 
-export async function convertToBaseCurrency(amount, currency = 'USD') {
+export async function convertToBaseCurrency(amount, currency = 'KES') {
   if (isNaN(amount)) return 0;
+  const code = (currency || 'KES').toUpperCase();
+  if (code === 'KES') return amount;
   const rates = await getExchangeRates();
-  const rate = rates[currency.toUpperCase()] || rates['USD'] || 129.50;
+  const rate = rates[code] !== undefined ? rates[code] : (rates['USD'] || 1.0);
   return amount * rate;
 }
 
