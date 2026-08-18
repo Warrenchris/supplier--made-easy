@@ -3,7 +3,7 @@ import { query, get, run } from './db.js';
 import { convertToBaseCurrency, getExchangeRates } from './fxService.js';
 
 /**
- * Product Identity Engine (v3.1 Adversarial-Hardened)
+ * Product Identity Engine (v3.2 Fail-Closed Disambiguation)
  * 
  * Pipeline: Supplier Listing → Normalize → Extract Brand → Extract Model
  *           → Extract SKU/MPN → Extract Specifications → Find Canonical Product
@@ -19,56 +19,104 @@ const KNOWN_BRANDS = [
 ];
 
 const MODEL_PATTERNS = [
-  // 990 Series (Specific to General)
+  // Samsung SSDs
   /\b(990\s*EVO\s*(?:\+|PLUS))\b/i,
   /\b(990\s*PRO\s*(?:PLUS|\+)?)\b/i,
   /\b(990\s*EVO)\b/i,
-  // 980 Series
   /\b(980\s*PRO)\b/i,
   /\b(980\s*EVO)\b/i,
   /\b(980)\b/i,
-  // 970 Series
   /\b(970\s*EVO\s*(?:\+|PLUS))\b/i,
   /\b(970\s*EVO)\b/i,
   /\b(970\s*PRO)\b/i,
-  // 870 Series
   /\b(870\s*EVO)\b/i,
   /\b(870\s*QVO)\b/i,
-  // Laptops & Peripherals
+  /\b(T\d{1,2}\s*(?:SHIELD|TOUCH|PORTABLE)?)\b/i,
+
+  // Western Digital & Crucial & Kingston & SanDisk
+  /\b(SN\s*850\s*X)\b/i,
+  /\b(SN\s*770)\b/i,
+  /\b(SN\s*580)\b/i,
+  /\b(P3\s*PLUS)\b/i,
+  /\b(P3)\b/i,
+  /\b(X6|X8|X9|X10)\b/i,
+  /\b(NV2|NV3|KC3000|A400)\b/i,
+  /\b(EXTREME(?:\s*PRO|\s*PORTABLE)?)\b/i,
+
+  // Laptops (Precedence order)
+  /\b(MACBOOK\s*PRO\s*\d+(?:\s*(?:M[1234]\s*(?:PRO|MAX|ULTRA)?))?)\b/i,
+  /\b(MACBOOK\s*AIR\s*\d+(?:\s*(?:M[1234]))?)\b/i,
   /\b(XPS\s*\d{2,4})\b/i,
-  /\b(LATITUDE\s*\d{3,4})\b/i,
-  /\b(INSPIRON\s*\d{3,4})\b/i,
-  /\b(MACBOOK\s*(?:PRO|AIR)\s*\d+)\b/i,
-  /\b(M[1234]\s*(?:PRO|MAX|ULTRA)?)\b/i,
-  /\b(MX\s*MASTER\s*3S?)\b/i,
-  /\b(MX\s*KEYS\s*(?:S|MINI)?)\b/i,
-  /\b(THINKPAD\s*[A-Z]\d{2,3})\b/i,
-  /\b(ELITEBOOK\s*\d{3,4})\b/i,
-  /\b(GALAXY\s*[AS]\d{1,2})\b/i,
-  /\b(IPHONE\s*\d{1,2}\s*(?:PRO|PLUS|MAX)?)\b/i,
-  /\b(IPAD\s*(?:PRO|AIR|MINI)?)\b/i,
+  /\b(LATITUDE\s*\d{2,4})\b/i,
+  /\b(INSPIRON\s*\d{2,4})\b/i,
+  /\b(VOSTRO\s*\d{2,4})\b/i,
+  /\b(THINKPAD\s*[A-Z]\d{1,2}(?:\s*GEN\s*\d+)?)\b/i,
+  /\b(IDEAPAD\s*\d*)\b/i,
+  /\b(ELITEBOOK\s*\d{2,4}(?:\s*G\d+)?)\b/i,
+  /\b(PROBOOK\s*\d{2,4}(?:\s*G\d+)?)\b/i,
+
+  // Peripherals
+  /\b(MX\s*MASTER\s*3S)\b/i,
+  /\b(MX\s*MASTER\s*3)\b/i,
+  /\b(MX\s*KEYS\s*S)\b/i,
+  /\b(MX\s*KEYS\s*MINI)\b/i,
+  /\b(MX\s*KEYS)\b/i,
+
+  // Mobile & Displays
+  /\b(GALAXY\s*[AS]\d{1,2}(?:\s*ULTRA|\s*PLUS|\s*\+)?)\b/i,
+  /\b(IPHONE\s*\d{1,2}\s*(?:PRO\s*MAX|PRO|PLUS|MAX)?)\b/i,
+  /\b(IPAD\s*(?:PRO|AIR|MINI)?\s*(?:\d+)?)\b/i,
   /\b(SURFACE\s*(?:PRO|LAPTOP|GO)\s*\d*)\b/i,
-  /\b(T\d{3,4}[A-Z]*)\b/i,
   /\b(VIEWFINITY\s*[A-Z]*\d*)\b/i,
 ];
 
-const CATEGORY_KEYWORDS = {
-  'SSD': ['ssd', 'solid state', 'nvme', 'm.2', 'sata drive', 'pcie 4.0', 'pcie 5.0'],
-  'HDD': ['hdd', 'hard drive', 'hard disk'],
-  'Laptop': ['laptop', 'notebook', 'ultrabook', 'macbook', 'thinkpad', 'xps', 'latitude', 'elitebook', 'inspiron'],
-  'Mouse': ['mouse', 'mice', 'trackpad', 'mx master', 'mx keys'],
-  'Keyboard': ['keyboard', 'keycaps', 'mechanical keyboard'],
-  'Monitor': ['monitor', 'display', 'screen', 'viewfinity'],
-  'RAM': ['ram', 'ddr4', 'ddr5', 'memory module', 'dimm', 'sodimm'],
-  'Printer': ['printer', 'scanner', 'multifunction', 'laser printer', 'inkjet'],
-  'Router': ['router', 'access point', 'switch', 'firewall', 'mikrotik', 'ubiquiti'],
-  'Phone': ['phone', 'smartphone', 'iphone', 'galaxy', 'pixel'],
-  'Tablet': ['tablet', 'ipad', 'surface'],
-  'GPU': ['gpu', 'graphics card', 'geforce', 'radeon', 'rtx', 'gtx'],
-  'CPU': ['cpu', 'processor', 'core i', 'ryzen', 'xeon'],
-  'Cable': ['cable', 'adapter', 'dongle', 'hub', 'dock'],
-  'Power': ['ups', 'power supply', 'psu', 'battery', 'charger'],
-};
+// Category precedence: Complex devices (Laptops/Phones) first, components second
+const CATEGORY_RULES = [
+  { category: 'Laptop', keywords: ['laptop', 'notebook', 'ultrabook', 'macbook', 'thinkpad', 'xps', 'latitude', 'elitebook', 'inspiron', 'probook', 'vostro', 'ideapad'] },
+  { category: 'Phone', keywords: ['smartphone', 'iphone', 'galaxy s', 'galaxy a', 'pixel'] },
+  { category: 'Tablet', keywords: ['tablet', 'ipad', 'surface pro', 'surface go'] },
+  { category: 'Keyboard', keywords: ['keyboard', 'keycaps', 'mechanical keyboard', 'mx keys'] },
+  { category: 'Mouse', keywords: ['mouse', 'mice', 'trackpad', 'mx master'] },
+  { category: 'Monitor', keywords: ['monitor', 'display', 'screen', 'viewfinity'] },
+  { category: 'SSD', keywords: ['ssd', 'solid state', 'nvme', 'm.2', 'sata drive', 'pcie 4.0', 'pcie 5.0'] },
+  { category: 'HDD', keywords: ['hdd', 'hard drive', 'hard disk'] },
+  { category: 'RAM', keywords: ['ram', 'ddr4', 'ddr5', 'memory module', 'dimm', 'sodimm'] },
+  { category: 'Printer', keywords: ['printer', 'scanner', 'multifunction', 'laser printer', 'inkjet'] },
+  { category: 'Router', keywords: ['router', 'access point', 'switch', 'firewall', 'mikrotik', 'ubiquiti'] },
+  { category: 'GPU', keywords: ['gpu', 'graphics card', 'geforce', 'radeon', 'rtx', 'gtx'] },
+  { category: 'CPU', keywords: ['cpu', 'processor', 'core i', 'ryzen', 'xeon'] },
+  { category: 'Cable', keywords: ['cable', 'adapter', 'dongle', 'hub', 'dock'] },
+  { category: 'Power', keywords: ['ups', 'power supply', 'psu', 'battery', 'charger'] }
+];
+
+// Equivalence list for synonymous wording tokens that do NOT represent different products
+const EQUIVALENT_TOKEN_GROUPS = [
+  new Set(['SSD', 'SOLID', 'STATE', 'DRIVE']),
+  new Set(['WIFI', 'WIRELESS']),
+  new Set(['BT', 'BLUETOOTH']),
+  new Set(['GEN4', 'GEN', '4', 'PCIE4', 'PCIE40', 'PCIE']),
+  new Set(['GEN5', 'GEN', '5', 'PCIE5', 'PCIE50']),
+  new Set(['NVME', 'M2']),
+  new Set(['INCH', 'INCHES', '14INCH', '13INCH', '15INCH', '16INCH']),
+  new Set(['LAPTOP', 'NOTEBOOK'])
+];
+
+function areTokensEquivalent(tokenA, tokenB) {
+  if (tokenA === tokenB) return true;
+  for (const group of EQUIVALENT_TOKEN_GROUPS) {
+    if (group.has(tokenA) && group.has(tokenB)) return true;
+  }
+  return false;
+}
+
+function getModelTokens(str) {
+  if (!str) return [];
+  return String(str).toUpperCase()
+    .replace(/\+/g, ' PLUS ')
+    .replace(/[^A-Z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
 
 // ─── Normalization Functions ────────────────────────────────────────────────
 
@@ -90,8 +138,18 @@ export function normalizeSku(sku) {
 
 export function extractBrand(text) {
   const upper = String(text || '').toUpperCase();
-  const brand = KNOWN_BRANDS.find((b) => upper.includes(b));
+  const brand = KNOWN_BRANDS.find((b) => {
+    const rx = new RegExp(`\\b${b}\\b`, 'i');
+    return rx.test(upper);
+  });
   if (brand) return brand === "WD" ? "WESTERN DIGITAL" : brand;
+
+  // Infer brand from prominent product lines when brand name is omitted in listing title
+  if (/\b(MACBOOK|IPHONE|IPAD|AIRPODS|IMAC|MAC\s*MINI)\b/i.test(upper)) return "APPLE";
+  if (/\b(THINKPAD|IDEAPAD|LEGION|YOGA)\b/i.test(upper)) return "LENOVO";
+  if (/\b(LATITUDE|INSPIRON|VOSTRO|PRECISION|OPTIPLEX)\b/i.test(upper)) return "DELL";
+  if (/\b(ELITEBOOK|PROBOOK|PAVILION|OMEN|SPECTRE)\b/i.test(upper)) return "HP";
+  if (/\b(GALAXY|VIEWFINITY|ODYSSEY)\b/i.test(upper)) return "SAMSUNG";
 
   const firstWord = upper.split(/[\s-]+/)[0];
   if (firstWord && firstWord.length >= 2 && KNOWN_BRANDS.includes(firstWord)) {
@@ -113,9 +171,9 @@ export function extractModel(text) {
 
 export function extractCategory(text) {
   const lower = String(text || '').toLowerCase();
-  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (keywords.some((kw) => lower.includes(kw))) {
-      return category;
+  for (const rule of CATEGORY_RULES) {
+    if (rule.keywords.some((kw) => lower.includes(kw))) {
+      return rule.category;
     }
   }
   return 'Electronics';
@@ -125,10 +183,12 @@ export function extractSpecifications(text) {
   const upper = String(text || '').toUpperCase();
   const specs = {};
 
-  // Capacity (storage/RAM)
-  const capMatch = upper.match(/\b(\d+)\s*(TB|GB|MB)\b/);
-  if (capMatch) {
-    specs.capacity = `${capMatch[1]}${capMatch[2]}`;
+  // Extract all capacity tokens (e.g. 16GB RAM, 512GB SSD)
+  const capMatches = [...upper.matchAll(/\b(\d+)\s*(TB|GB|MB)\b/g)];
+  if (capMatches.length > 0) {
+    const caps = capMatches.map((m) => `${m[1]}${m[2]}`);
+    specs.capacities = caps;
+    specs.capacity = caps[caps.length - 1];
   }
 
   // Interface
@@ -150,9 +210,9 @@ export function extractSpecifications(text) {
   }
 
   // Processor
-  const procMatch = upper.match(/\b(CORE\s*I[3579]|RYZEN\s*[3579]|M[1234]\s*(?:PRO|MAX)?)\b/);
+  const procMatch = upper.match(/\b(CORE\s*I[3579]|I[3579]-?\d{4,5}[A-Z]*|RYZEN\s*[3579]|M[1234]\s*(?:PRO|MAX|ULTRA)?)\b/);
   if (procMatch) {
-    specs.processor = procMatch[1].trim();
+    specs.processor = procMatch[1].replace(/\s+/g, ' ').trim();
   }
 
   return specs;
@@ -162,16 +222,31 @@ export function extractIdentifiers(rawSku, rawName) {
   const identifiers = {};
 
   if (rawSku) {
-    identifiers.supplierSku = rawSku;
-    identifiers.mpn = normalizeSku(rawSku);
+    const normSku = normalizeSku(rawSku);
+    const cleanCand = normSku.toUpperCase();
+    const isBrand = KNOWN_BRANDS.some((b) => b.replace(/[^A-Z0-9]/g, '') === cleanCand);
+    const isCapacityOnly = /^\d+(TB|GB|MB)$/i.test(normSku);
+    if (!isBrand && !isCapacityOnly && normSku.length >= 3) {
+      identifiers.supplierSku = rawSku;
+      identifiers.mpn = normSku;
+    }
   }
 
-  // Try to extract MPN patterns (e.g. MZ-V9S1T0BW, MRX33LL/A, MZV9S1T0BW)
-  const mpnMatch = String(rawName || '').match(/\b([A-Z]{2,3}[-]?[A-Z0-9]{3,}[A-Z0-9/]*)\b/i);
-  if (mpnMatch && mpnMatch[1].length >= 6) {
-    identifiers.detectedMpn = mpnMatch[1].toUpperCase();
-    if (!identifiers.mpn) {
-      identifiers.mpn = normalizeSku(mpnMatch[1]);
+  // Real MPNs almost always contain digits or structured hyphens (e.g. MZ-V9S1T0BW, MRX33LL/A, MZV9S1T0BW, 910-006556, XPS15-9530-01)
+  // Exclude pure capacity strings (\d+GB), pure alphabetic brand/category words, and KNOWN_BRANDS
+  const mpnMatch = String(rawName || '').match(/\b([A-Z0-9]{2,5}[-][A-Z0-9]{2,}[A-Z0-9/]*|\b(?=[A-Z0-9]*\d)[A-Z0-9]{5,}[A-Z0-9/]*)\b/i);
+  if (mpnMatch && mpnMatch[1].length >= 5) {
+    const cand = mpnMatch[1].toUpperCase();
+    const cleanCand = cand.replace(/[^A-Z0-9]/g, '');
+    const isBrand = KNOWN_BRANDS.some((b) => b.replace(/[^A-Z0-9]/g, '') === cleanCand);
+    const isCapacityOnly = /^\d+(TB|GB|MB)$/i.test(cleanCand);
+    const hasDigit = /\d/.test(cand);
+
+    if (!isBrand && !isCapacityOnly && hasDigit) {
+      identifiers.detectedMpn = cand;
+      if (!identifiers.mpn) {
+        identifiers.mpn = normalizeSku(cand);
+      }
     }
   }
 
@@ -196,12 +271,12 @@ export function normalizeListing(rawListing) {
 
 /**
  * Calculate similarity between a normalized listing and a canonical product.
- * Adversarially hardened against false positives for different models.
+ * Adversarially hardened with fail-closed model variant disambiguation.
  */
 export function calculateSimilarity(normalized, canonical) {
-  let score = 0;
+  let totalScore = 0;
+  let maxPossibleScore = 0;
   const signals = [];
-  const maxScore = 5;
 
   const cBrand = (canonical.brand || '').toUpperCase();
   const cModel = (canonical.model_number || '').toUpperCase();
@@ -215,80 +290,151 @@ export function calculateSimilarity(normalized, canonical) {
     ? JSON.parse(canonical.identifiers || '{}')
     : (canonical.identifiers || {});
 
-  // 1. Brand match (1.0 point)
-  if (normalized.brand && cBrand && normalized.brand.toUpperCase() === cBrand) {
-    score += 1.0;
-    signals.push(`Brand match: ${normalized.brand}`);
-  } else if (normalized.brand && cBrand && normalized.brand.toUpperCase() !== cBrand) {
-    // Conflicting brand penalty
-    return { confidence: 0.0, signals: [`Conflicting brands: ${normalized.brand} vs ${cBrand}`], explanation: 'Conflicting brands' };
+  // 1. Brand match (Weight: 1.0)
+  maxPossibleScore += 1.0;
+  if (normalized.brand && cBrand) {
+    if (normalized.brand.toUpperCase() === cBrand) {
+      totalScore += 1.0;
+      signals.push(`Brand match: ${normalized.brand}`);
+    } else {
+      // Conflicting brand -> Strict rejection
+      return { confidence: 0.0, signals: [`Conflicting brands: ${normalized.brand} vs ${cBrand}`], explanation: 'Conflicting brands' };
+    }
   }
 
-  // 2. Model match (1.5 points) — STRICT distinction between EVO, EVO PLUS, PRO, etc.
-  if (normalized.model && cModel) {
-    const normModel = normalized.model.toUpperCase().replace(/\s+/g, '');
-    const canModel = cModel.replace(/\s+/g, '');
+  // 2. Model match (Weight: 2.0) — Fail-Closed Model Variant Disambiguation
+  if (normalized.model || cModel) {
+    maxPossibleScore += 2.0;
+    if (normalized.model && cModel) {
+      const normTokens = getModelTokens(normalized.model);
+      const canTokens = getModelTokens(cModel);
 
-    if (normModel === canModel) {
-      score += 1.5;
-      signals.push(`Exact model match: ${normalized.model}`);
-    } else {
-      // Check if one has PLUS/PRO/MAX/ULTRA and the other doesn't
-      const hasModifierNorm = /\b(PLUS|PRO|MAX|ULTRA|MINI|TI|SUPER)\b/i.test(normalized.model);
-      const hasModifierCan = /\b(PLUS|PRO|MAX|ULTRA|MINI|TI|SUPER)\b/i.test(cModel);
+      const isExact = normTokens.length === canTokens.length &&
+        normTokens.every((t, i) => t === canTokens[i]);
 
-      if (hasModifierNorm !== hasModifierCan) {
-        // One is e.g. EVO and other is EVO PLUS -> STRICT REJECTION
-        return {
-          confidence: 0.20,
-          signals: [`Model variant conflict: ${normalized.model} vs ${cModel}`],
-          explanation: `Different model variants (${normalized.model} vs ${cModel})`
-        };
-      } else if (normModel.includes(canModel) || canModel.includes(normModel)) {
-        score += 0.75;
-        signals.push(`Partial model match: ${normalized.model} ≈ ${cModel}`);
+      if (isExact) {
+        totalScore += 2.0;
+        signals.push(`Exact model match: ${normalized.model}`);
+      } else {
+        const diffInNorm = normTokens.filter((nt) => !canTokens.some((ct) => areTokensEquivalent(nt, ct)));
+        const diffInCan = canTokens.filter((ct) => !normTokens.some((nt) => areTokensEquivalent(ct, nt)));
+
+        // Handle optional Gen specification (e.g. ThinkPad E14 Gen 5 vs ThinkPad E14)
+        const isGenOmission = (diffInNorm.length === 2 && diffInNorm[0] === 'GEN' && diffInCan.length === 0) ||
+                             (diffInCan.length === 2 && diffInCan[0] === 'GEN' && diffInNorm.length === 0);
+
+        if (isGenOmission) {
+          totalScore += 1.5;
+          signals.push(`Model series match (generation unspecified): ${normalized.model} ≈ ${cModel}`);
+        } else if (diffInNorm.length > 0 || diffInCan.length > 0) {
+          // FAIL-CLOSED RULE:
+          // Any distinguishing suffix or modifier token that is not in the equivalence list
+          // constitutes a model variant conflict by default (e.g. 990 EVO vs 990 EVO Plus,
+          // 870 EVO vs 870 QVO, MX Master 3 vs 3S, M3 vs M3 Pro).
+          return {
+            confidence: 0.20,
+            signals: [`Model variant conflict: ${normalized.model} vs ${cModel}`],
+            explanation: `Different model variants (${normalized.model} vs ${cModel})`
+          };
+        } else {
+          totalScore += 2.0;
+          signals.push(`Exact model match: ${normalized.model}`);
+        }
+      }
+    } else if (!normalized.model && cModel) {
+      const canModel = cModel.toUpperCase().replace(/\s+/g, '');
+      const rawNameNorm = (normalized.normalizedName || '').toUpperCase().replace(/\s+/g, '');
+      if (rawNameNorm.includes(canModel)) {
+        totalScore += 1.5;
+        signals.push(`Model mention in name: ${cModel}`);
       }
     }
   }
 
-  // 3. SKU/MPN match (1.5 points)
-  const normMpn = normalized.identifiers.mpn || normalized.identifiers.detectedMpn;
-  const canMpn = cIds.mpn || cIds.detectedMpn;
+  // 3. Processor check (for laptops/PCs)
+  const normProc = (normalized.specifications?.processor || '').toUpperCase();
+  const canProc = (cSpecs.processor || cAttrs.processor || '').toUpperCase();
+  if (normProc && canProc) {
+    const cleanNorm = normProc.replace('CORE ', '').replace('-', '');
+    const cleanCan = canProc.replace('CORE ', '').replace('-', '');
+    const isExact = normProc === canProc;
+    const isFamilyOverlap = cleanNorm.includes(cleanCan) || cleanCan.includes(cleanNorm);
 
-  if (normMpn && canMpn) {
-    if (normMpn === canMpn) {
-      score += 1.5;
-      signals.push(`MPN exact match: ${normMpn}`);
-    } else if (normMpn.includes(canMpn) || canMpn.includes(normMpn)) {
-      score += 1.0;
-      signals.push(`MPN partial overlap: ${normMpn} ≈ ${canMpn}`);
-    }
-  }
-
-  // 4. Capacity match (0.5 points)
-  const normCap = (normalized.specifications.capacity || '').toUpperCase();
-  const canCap = (cSpecs.capacity || cAttrs.capacity || '').toUpperCase();
-  if (normCap && canCap) {
-    if (normCap === canCap) {
-      score += 0.5;
-      signals.push(`Capacity match: ${normCap}`);
+    if (isExact) {
+      totalScore += 0.5;
+      signals.push(`Processor match: ${normProc}`);
+    } else if (isFamilyOverlap) {
+      totalScore += 0.4;
+      signals.push(`Processor family match: ${normProc} ≈ ${canProc}`);
     } else {
-      // Conflicting capacity -> heavily penalize
+      // Conflicting processor (e.g. M3 vs M3 Pro or i5 vs i7)
       return {
-        confidence: 0.15,
-        signals: [`Capacity mismatch: ${normCap} vs ${canCap}`],
-        explanation: `Different capacities (${normCap} vs ${canCap})`
+        confidence: 0.20,
+        signals: [`Processor conflict: ${normProc} vs ${canProc}`],
+        explanation: `Different processors (${normProc} vs ${canProc})`
       };
     }
   }
 
-  // 5. Category match (0.5 points)
-  if (normalized.category && canonical.category && normalized.category === canonical.category) {
-    score += 0.5;
-    signals.push(`Category match: ${normalized.category}`);
+  // 4. SKU/MPN match (Weight: 1.5)
+  const normMpn = normalized.identifiers.mpn || normalized.identifiers.detectedMpn;
+  const canMpn = cIds.mpn || cIds.detectedMpn;
+
+  if (normMpn || canMpn) {
+    if (normMpn && canMpn) {
+      maxPossibleScore += 1.5;
+      if (normMpn === canMpn) {
+        totalScore += 1.5;
+        signals.push(`MPN exact match: ${normMpn}`);
+      } else if (normMpn.includes(canMpn) || canMpn.includes(normMpn)) {
+        totalScore += 1.0;
+        signals.push(`MPN partial overlap: ${normMpn} ≈ ${canMpn}`);
+      }
+    }
   }
 
-  const confidence = Math.min(1.0, Math.round((score / maxScore) * 100) / 100);
+  // 5. Capacity match (Weight: 1.0)
+  const normCaps = normalized.specifications.capacities || (normalized.specifications.capacity ? [normalized.specifications.capacity] : []);
+  const canCaps = cSpecs.capacities || (cSpecs.capacity ? [cSpecs.capacity] : []);
+
+  if (normCaps.length > 0 && canCaps.length > 0) {
+    maxPossibleScore += 1.0;
+    const hasOverlap = normCaps.some((nc) => canCaps.includes(nc));
+    if (hasOverlap) {
+      totalScore += 1.0;
+      signals.push(`Capacity match: ${normCaps.filter((c) => canCaps.includes(c)).join(', ')}`);
+    } else {
+      // Conflicting capacity -> Strict penalty
+      return {
+        confidence: 0.15,
+        signals: [`Capacity mismatch: ${normCaps.join('/')} vs ${canCaps.join('/')}`],
+        explanation: `Different capacities (${normCaps.join('/')} vs ${canCaps.join('/')})`
+      };
+    }
+  }
+
+  // 6. Category match (Weight: 0.5)
+  if (normalized.category && canonical.category) {
+    maxPossibleScore += 0.5;
+    if (normalized.category === canonical.category) {
+      totalScore += 0.5;
+      signals.push(`Category match: ${normalized.category}`);
+    } else {
+      const incompatible = (normalized.category === 'Mouse' && canonical.category === 'Keyboard') ||
+                           (normalized.category === 'Laptop' && canonical.category === 'Phone') ||
+                           (normalized.category === 'SSD' && canonical.category === 'Laptop');
+      if (incompatible) {
+        return {
+          confidence: 0.10,
+          signals: [`Category conflict: ${normalized.category} vs ${canonical.category}`],
+          explanation: `Category conflict (${normalized.category} vs ${canonical.category})`
+        };
+      }
+    }
+  }
+
+  if (maxPossibleScore === 0) maxPossibleScore = 1.0;
+  const confidence = Math.min(1.0, Math.round((totalScore / maxPossibleScore) * 100) / 100);
 
   const explanation = signals.length > 0
     ? `Matched: ${signals.join(' · ')}`
@@ -358,7 +504,7 @@ export async function processListing(rawListingId) {
   const resolution = await resolveCanonicalProduct(normalized);
 
   const rates = await getExchangeRates();
-  const rate = rates[listing.parsed_currency] || rates['USD'] || 129.50;
+  const rate = rates[listing.parsed_currency] || rates['USD'] || 1.0;
   const priceInBase = listing.parsed_price * rate;
 
   const stockQty = parseStockQty(listing.raw_stock_text);
@@ -414,7 +560,7 @@ export async function processListing(rawListingId) {
   } else if (resolution.action === 'review_queue') {
     const sugId = `sug_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const existingListings = await query(
-      `SELECT * FROM raw_listings WHERE r.canonical_product_id = ?`,
+      `SELECT * FROM raw_listings WHERE canonical_product_id = ?`,
       [resolution.canonicalProduct.id]
     );
     const otherListing = existingListings.length > 0 ? existingListings[0] : null;
