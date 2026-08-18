@@ -299,25 +299,41 @@ export default function App() {
             )}
           </button>
 
-          {/* User Profile & Role Switcher */}
+          {/* Authenticated User Profile & Logout */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '8px', borderLeft: '1px solid var(--border-subtle)' }}>
-            <div style={{ width: '26px', height: '26px', borderRadius: 'var(--radius-xs)', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--forest-bright)' }}>
+            <div 
+              style={{ 
+                width: '26px', 
+                height: '26px', 
+                borderRadius: 'var(--radius-xs)', 
+                backgroundColor: currentUser?.role === 'admin' ? 'var(--forest-light)' : currentUser?.role === 'buyer' ? 'var(--copper-light)' : 'var(--bg-elevated)', 
+                border: '1px solid var(--border-subtle)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                color: currentUser?.role === 'admin' ? 'var(--forest-bright)' : currentUser?.role === 'buyer' ? 'var(--copper-bright)' : 'var(--text-muted)' 
+              }}
+            >
               <User size={14} />
             </div>
-            <select
-              value={currentRole}
-              onChange={(e) => {
-                const role = e.target.value;
-                setCurrentRole(role);
-                localStorage.setItem('sme_auth_token', `${role}-token`);
-                toast.info(`Switched active session to ${role.toUpperCase()} role.`, 'Active Role Changed');
-              }}
-              style={{ fontSize: '11px', padding: '2px 6px', height: '26px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xs)', color: 'var(--text-secondary)' }}
+            
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+                {currentUser?.name || 'Authorized Operator'}
+              </div>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: currentUser?.role === 'admin' ? 'var(--forest-bright)' : currentUser?.role === 'buyer' ? 'var(--copper-bright)' : 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {currentUser?.role || 'User'}
+              </div>
+            </div>
+
+            <button
+              onClick={handleLogout}
+              className="btn-ghost"
+              style={{ padding: '4px 6px', marginLeft: '4px', color: 'var(--text-muted)' }}
+              title="Sign Out"
             >
-              <option value="admin">Admin (Full Access)</option>
-              <option value="buyer">Buyer (Operational)</option>
-              <option value="viewer">Viewer (Read Only)</option>
-            </select>
+              <LogOut size={13} />
+            </button>
           </div>
 
         </div>
@@ -635,6 +651,11 @@ export default function App() {
         </main>
 
       </div>
+
+      {/* ─── Real Authentication Login Gate ─── */}
+      {(!currentUser || !localStorage.getItem('sme_auth_token')) && (
+        <LoginModal onLoginSuccess={(user) => setCurrentUser(user)} />
+      )}
 
       {/* ─── Command Palette Modal (⌘K) ─── */}
       <CommandPalette 
