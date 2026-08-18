@@ -7,40 +7,12 @@ import {
 } from "lucide-react";
 import api from "../services/apiClient";
 import { useToast } from "../context/ToastContext";
+import { parsePriceValue } from "../utils/priceParser";
 
 const NAME_KEYS = ["product", "name", "description", "item", "title", "model name", "product name", "details", "desc"];
 const SKU_KEYS = ["sku", "code", "part", "model", "mpn", "id", "ean", "upc", "part number", "item code", "p/n"];
 const PRICE_KEYS = ["price", "cost", "wholesale", "unit price", "rrp", "rate", "usd", "kes", "eur", "amount", "unit cost", "quote"];
 const STOCK_KEYS = ["stock", "qty", "quantity", "availability", "avail", "inventory", "status", "count", "on hand"];
-
-export function parsePriceValue(val) {
-  if (val === null || val === undefined) return NaN;
-  if (typeof val === "number") return isNaN(val) ? NaN : val;
-  
-  let str = String(val).trim();
-  if (!str) return NaN;
-
-  // Clean currency symbols and labels like 'KES', 'USD', '$', '€', '£', '/-', 'ea'
-  str = str.replace(/^(USD|KES|EUR|GBP|KSH|US\$|\$|€|£)\s*/i, "")
-           .replace(/\s*(\/\-|\/ea|ea|each|per unit)$/i, "")
-           .trim();
-
-  // European format check e.g. 1.250,50 or 1250,50
-  if (/\d+\.\d{3},\d{2}/.test(str)) {
-    str = str.replace(/\./g, "").replace(",", ".");
-  } else if (/^\d+,\d{2}$/.test(str)) {
-    str = str.replace(",", ".");
-  } else {
-    // Standard thousands comma format e.g. 1,450.50
-    str = str.replace(/,/g, "");
-  }
-
-  // Extract first floating-point number
-  const match = str.match(/[-+]?[0-9]*\.?[0-9]+/);
-  if (!match) return NaN;
-  const num = parseFloat(match[0]);
-  return isNaN(num) ? NaN : num;
-}
 
 function guessColumn(headers, keywords) {
   const lower = headers.map((h) => String(h).toLowerCase());

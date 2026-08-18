@@ -5,6 +5,8 @@ import {
   Target, Layers, Zap, CheckCircle2, ChevronRight, Upload,
   AlertTriangle, ArrowUpRight, Sparkles
 } from 'lucide-react';
+import api from '../services/apiClient';
+import { useToast } from '../context/ToastContext';
 
 export default function OverviewDashboard({ onNavigate, onOpenImport }) {
   const [products, setProducts] = useState([]);
@@ -12,15 +14,16 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
   const [matchSuggestions, setMatchSuggestions] = useState([]);
   const [trends, setTrends] = useState({});
   const [loading, setLoading] = useState(true);
+  const toast = useToast();
 
   useEffect(() => {
     const fetchOverviewData = async () => {
       setLoading(true);
       try {
         const [prodRes, supRes, matchRes] = await Promise.all([
-          fetch('/api/canonical-products').then((r) => r.json()),
-          fetch('/api/suppliers').then((r) => r.json()),
-          fetch('/api/match-suggestions').then((r) => r.json())
+          api.get('/api/canonical-products'),
+          api.get('/api/suppliers'),
+          api.get('/api/match-suggestions')
         ]);
 
         const prods = Array.isArray(prodRes) ? prodRes : [];
@@ -31,18 +34,17 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
         // Fetch price trend counts
         let priceDropCount = 0;
         let priceIncreaseCount = 0;
-        for (const p of prods.slice(0, 15)) {
+        await Promise.all(prods.slice(0, 15).map(async (p) => {
           try {
-            const tRes = await fetch(`/api/price-trends?productId=${p.id}`);
-            const tData = await tRes.json();
+            const tData = await api.get(`/api/price-trends?productId=${p.id}`);
             const primary = Array.isArray(tData) ? tData[0] : tData;
             if (primary?.trend30d?.direction === 'down' || primary?.trend7d?.direction === 'down') priceDropCount++;
             if (primary?.trend30d?.direction === 'up' || primary?.trend7d?.direction === 'up') priceIncreaseCount++;
           } catch {}
-        }
+        }));
         setTrends({ drops: priceDropCount, increases: priceIncreaseCount });
       } catch (err) {
-        console.error('Failed to load overview telemetry:', err);
+        toast.error(err.message, 'Failed to Load Overview Telemetry');
       } finally {
         setLoading(false);
       }
