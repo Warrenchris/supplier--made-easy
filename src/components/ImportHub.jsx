@@ -1,6 +1,10 @@
 import { useState, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
-import { Upload, X, Check, AlertTriangle, FileSpreadsheet, Sparkles, Layers } from "lucide-react";
+import { 
+  Upload, X, Check, AlertTriangle, FileSpreadsheet, 
+  Sparkles, Layers, CheckCircle2, ArrowRight, RefreshCw, 
+  FileText, ShieldCheck
+} from "lucide-react";
 
 const NAME_KEYS = ["product", "name", "description", "item", "title", "model name", "product name"];
 const SKU_KEYS = ["sku", "code", "part", "model", "mpn", "id", "ean", "upc", "part number"];
@@ -72,6 +76,7 @@ export default function ImportHub({ onImportSuccess }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [dragActive, setDragActive] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [successReport, setSuccessReport] = useState(null);
   const fileInputRef = useRef(null);
 
   const handleFiles = useCallback((fileList) => {
@@ -87,9 +92,9 @@ export default function ImportHub({ onImportSuccess }) {
             return { name, rawRows, checked: rawRows.length > 1 && !COVER_SHEET_RX.test(name.trim()) };
           }).filter((s) => s.rawRows.length > 0);
           const baseName = file.name.replace(/\.(xlsx|xls|csv)$/i, "");
-          setSheetPickers((prev) => [...prev, { id: `wb_${Date.now()}_${Math.random()}`, fileName: file.name, supplierName: baseName, currency: "USD", sheets }]);
+          setSheetPickers((prev) => [...prev, { id: `wb_${Date.now()}_${Math.random()}`, fileName: file.name, supplierName: baseName, currency: "KES", sheets }]);
         } catch (err) {
-          setSheetPickers((prev) => [...prev, { id: `wb_${Date.now()}`, fileName: file.name, supplierName: file.name, currency: "USD", sheets: [], error: "Couldn't parse file. Try re-saving as .xlsx or .csv." }]);
+          setSheetPickers((prev) => [...prev, { id: `wb_${Date.now()}`, fileName: file.name, supplierName: file.name, currency: "KES", sheets: [], error: "File parse error. Ensure .xlsx or .csv format." }]);
         }
       };
       reader.readAsArrayBuffer(file);
@@ -103,9 +108,15 @@ export default function ImportHub({ onImportSuccess }) {
       const headers = buildHeaders(s.rawRows, headerRowIndex);
       const dataRows = buildDataRows(s.rawRows, headerRowIndex, headers);
       return {
-        id: `pf_${Date.now()}_${Math.random()}`, fileName: sp.fileName, sheetName: s.name,
-        supplierName: sp.supplierName, currency: sp.currency,
-        rawRows: s.rawRows, headerRowIndex,
+        id: `pf_${Date.now()}_${Math.random()}`,
+        fileName: sp.fileName,
+        sheetName: s.name,
+        supplierName: sp.supplierName,
+        currency: sp.currency,
+        rawRows: s.rawRows,
+        headerRowIndex,
+        headers,
+        dataRows,
         mapping: guessMapping(headers, dataRows),
       };
     });
@@ -116,11 +127,9 @@ export default function ImportHub({ onImportSuccess }) {
   const confirmPending = async (pf) => {
     if (!pf.mapping || !pf.mapping.name || !pf.mapping.price) return;
     setImporting(true);
+    setSuccessReport(null);
 
-    const headers = buildHeaders(pf.rawRows, pf.headerRowIndex);
-    const dataRows = buildDataRows(pf.rawRows, pf.headerRowIndex, headers);
-
-    const items = dataRows.map((row) => {
+    const items = pf.dataRows.map((row) => {
       const name = String(row[pf.mapping.name] ?? "").trim();
       const price = parseFloat(String(row[pf.mapping.price]).replace(/[^0-9.]/g, ""));
       if (!name || isNaN(price)) return null;
@@ -130,7 +139,7 @@ export default function ImportHub({ onImportSuccess }) {
     }).filter(Boolean);
 
     try {
-      await fetch('/api/imports', {
+      const res = await fetch('/api/imports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -139,110 +148,287 @@ export default function ImportHub({ onImportSuccess }) {
           items
         })
       });
+      const data = await res.json();
       setPendingFiles((prev) => prev.filter((p) => p.id !== pf.id));
+      setSuccessReport({ supplier: pf.supplierName, count: items.length });
       if (onImportSuccess) onImportSuccess();
     } catch (err) {
-      console.error(err);
+      console.error('Import failed:', err);
     } finally {
       setImporting(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: "1240px", margin: "0 auto", color: "#f0f3f8" }}>
-      <div style={{ marginBottom: "20px" }}>
-        <h2 style={{ fontSize: "20px", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
-          <Upload size={22} color="#2dd4bf" /> Ingestion & Column Mapping Hub
-        </h2>
-        <p style={{ fontSize: "13px", color: "#949eb2", marginTop: "4px" }}>
-          Upload supplier pricelists in Excel (.xlsx, .xls) or CSV. Auto-detects header rows and maps product names, SKUs, prices, and specs.
+    <div className="animate-fade" style={{ maxWidth: '1100px', margin: '0 auto' }}>
+      
+      {/* ─── Header ─── */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
+          Catalog Ingestion Pipeline
+        </div>
+        <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+          Import Supplier Pricelists
+        </h1>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+          Drop raw Excel, CSV, or supplier pricelist spreadsheets. The pipeline extracts SKUs, normalizes currency, and matches canonical inventory.
         </p>
       </div>
 
+      {successReport && (
+        <div className="panel" style={{ padding: '14px 18px', marginBottom: '16px', backgroundColor: 'var(--color-success-bg)', borderColor: 'rgba(47, 107, 82, 0.4)', color: 'var(--color-success-text)', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CheckCircle2 size={16} />
+            <span>Successfully ingested <strong>{successReport.count} items</strong> from <strong>{successReport.supplier}</strong>.</span>
+          </div>
+          <button onClick={() => setSuccessReport(null)} className="btn-ghost" style={{ padding: '2px' }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* ─── Drag and Drop Upload Zone ─── */}
       <div
-        onClick={() => fileInputRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
         onDragLeave={() => setDragActive(false)}
         onDrop={(e) => { e.preventDefault(); setDragActive(false); handleFiles(e.dataTransfer.files); }}
+        onClick={() => fileInputRef.current?.click()}
+        className="panel"
         style={{
-          background: dragActive ? "rgba(45, 212, 191, 0.05)" : "#181b24",
-          border: `2px dashed ${dragActive ? "#2dd4bf" : "#2b303d"}`,
-          borderRadius: "14px",
-          padding: "36px 20px",
-          textAlign: "center",
-          cursor: "pointer",
-          marginBottom: "24px",
-          transition: "all 0.2s ease"
+          padding: '40px 24px',
+          textAlign: 'center',
+          borderStyle: 'dashed',
+          borderColor: dragActive ? 'var(--forest-bright)' : 'var(--border-default)',
+          backgroundColor: dragActive ? 'var(--bg-elevated)' : 'var(--bg-surface)',
+          cursor: 'pointer',
+          marginBottom: '20px',
+          transition: 'all 0.15s ease'
         }}
       >
-        <Upload size={32} color={dragActive ? "#2dd4bf" : "#949eb2"} style={{ marginBottom: "10px" }} />
-        <div style={{ fontSize: "15px", fontWeight: 600, color: "#f0f3f8" }}>Drop Excel or CSV Pricelists Here</div>
-        <div style={{ fontSize: "12px", color: "#949eb2", marginTop: "4px" }}>Multi-sheet workbooks automatically scanned. Client-side privacy guaranteed.</div>
-        <input ref={fileInputRef} type="file" multiple accept=".csv,.xlsx,.xls" hidden onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".xlsx,.xls,.csv"
+          onChange={(e) => handleFiles(e.target.files)}
+          style={{ display: 'none' }}
+        />
+        <div style={{ background: 'var(--forest-light)', width: '44px', height: '44px', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+          <Upload size={20} color="var(--forest-bright)" />
+        </div>
+        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+          Drop Excel or CSV Supplier Pricelists Here
+        </div>
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+          Supports .xlsx, .xls, .csv · Multi-tab spreadsheets automatically parsed
+        </div>
       </div>
 
-      {/* Sheet Picker Cards */}
+      {/* ─── Sheet Pickers (Step 1) ─── */}
       {sheetPickers.map((sp) => (
-        <div key={sp.id} style={{ background: "#181b24", border: "1px solid #2b303d", borderRadius: "12px", padding: "18px", marginBottom: "16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-              <span style={{ fontSize: "14px", fontWeight: 600 }}>{sp.fileName} ({sp.sheets.length} sheets)</span>
-              <input style={{ background: "#202430", border: "1px solid #2b303d", color: "#f0f3f8", padding: "6px 10px", borderRadius: "6px", fontSize: "13px", outline: "none" }} value={sp.supplierName} onChange={(e) => setSheetPickers(sheetPickers.map(s => s.id === sp.id ? { ...s, supplierName: e.target.value } : s))} placeholder="Supplier Name" />
-              <input style={{ background: "#202430", border: "1px solid #2b303d", color: "#f0f3f8", padding: "6px 10px", borderRadius: "6px", fontSize: "13px", width: "90px", outline: "none" }} value={sp.currency} onChange={(e) => setSheetPickers(sheetPickers.map(s => s.id === sp.id ? { ...s, currency: e.target.value } : s))} placeholder="Currency" />
+        <div key={sp.id} className="panel" style={{ padding: '18px 20px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FileSpreadsheet size={18} color="var(--forest-bright)" />
+              <span style={{ fontWeight: 600, fontSize: '14px' }}>{sp.fileName}</span>
             </div>
-            <button onClick={() => setSheetPickers(sheetPickers.filter(s => s.id !== sp.id))} style={{ background: "none", border: "none", color: "#949eb2", cursor: "pointer" }}><X size={16} /></button>
+            <button onClick={() => setSheetPickers((prev) => prev.filter((i) => i.id !== sp.id))} className="btn-ghost" style={{ padding: '4px' }}>
+              <X size={14} />
+            </button>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px", marginBottom: "16px" }}>
-            {sp.sheets.map((s) => (
-              <label key={s.name} style={{ display: "flex", alignItems: "center", gap: "8px", background: "#202430", padding: "8px 10px", borderRadius: "8px", cursor: "pointer", fontSize: "12px" }}>
-                <input type="checkbox" checked={s.checked} onChange={() => setSheetPickers(sheetPickers.map(spItem => spItem.id !== sp.id ? spItem : { ...spItem, sheets: spItem.sheets.map(sh => sh.name === s.name ? { ...sh, checked: !sh.checked } : sh) }))} />
-                <span>{s.name} ({s.rawRows.length} rows)</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '16px', marginBottom: '14px' }}>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                Supplier Entity Name
               </label>
-            ))}
+              <input
+                value={sp.supplierName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSheetPickers((prev) => prev.map((item) => item.id === sp.id ? { ...item, supplierName: val } : item));
+                }}
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                Catalog Currency
+              </label>
+              <select
+                value={sp.currency}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSheetPickers((prev) => prev.map((item) => item.id === sp.id ? { ...item, currency: val } : item));
+                }}
+                style={{ width: '100%' }}
+              >
+                <option value="KES">KES (Kenyan Shillings)</option>
+                <option value="USD">USD (US Dollar)</option>
+                <option value="EUR">EUR (Euro)</option>
+                <option value="GBP">GBP (British Pound)</option>
+              </select>
+            </div>
           </div>
 
-          <button onClick={() => confirmSheetPicker(sp)} style={{ background: "#2dd4bf", border: "none", color: "#042f2e", padding: "8px 16px", borderRadius: "8px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}>
-            <Check size={16} /> Continue with Selected Sheets
-          </button>
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Select Sheets to Ingest
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {sp.sheets.map((sh, idx) => (
+                <label 
+                  key={sh.name} 
+                  style={{ 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: '6px', 
+                    padding: '6px 10px', 
+                    borderRadius: 'var(--radius-xs)', 
+                    background: 'var(--bg-elevated)', 
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={sh.checked}
+                    onChange={(e) => {
+                      const ch = e.target.checked;
+                      setSheetPickers((prev) => prev.map((item) => {
+                        if (item.id !== sp.id) return item;
+                        const copy = [...item.sheets];
+                        copy[idx] = { ...copy[idx], checked: ch };
+                        return { ...item, sheets: copy };
+                      }));
+                    }}
+                    style={{ accentColor: 'var(--forest-primary)' }}
+                  />
+                  <span>{sh.name} ({sh.rawRows.length} rows)</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={() => confirmSheetPicker(sp)} className="btn-primary" style={{ fontSize: '12px' }}>
+              Configure Column Mappings <ArrowRight size={13} />
+            </button>
+          </div>
         </div>
       ))}
 
-      {/* Pending Column Mapping Cards */}
-      {pendingFiles.map((pf) => {
-        const headers = buildHeaders(pf.rawRows, pf.headerRowIndex);
-        return (
-          <div key={pf.id} style={{ background: "#181b24", border: "1px solid #2dd4bf", borderRadius: "12px", padding: "20px", marginBottom: "16px" }}>
-            <div style={{ fontSize: "14px", fontWeight: 700, color: "#2dd4bf", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-              <FileSpreadsheet size={16} /> Sheet: {pf.sheetName} ({pf.supplierName})
+      {/* ─── Pending File Mappings & Confirmation (Step 2) ─── */}
+      {pendingFiles.map((pf) => (
+        <div key={pf.id} className="panel" style={{ padding: '18px 20px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                {pf.supplierName} · {pf.sheetName}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                {pf.dataRows.length} data rows detected · Currency: {pf.currency}
+              </div>
             </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", marginBottom: "16px" }}>
-              {[["name", "Product Name *"], ["sku", "SKU / Code"], ["price", "Price *"], ["stock", "Stock / Availability"]].map(([field, label]) => (
-                <div key={field}>
-                  <label style={{ fontSize: "11px", color: "#949eb2", display: "block", marginBottom: "4px" }}>{label}</label>
-                  <select
-                    value={pf.mapping[field]}
-                    onChange={(e) => setPendingFiles(pendingFiles.map(p => p.id === pf.id ? { ...p, mapping: { ...p.mapping, [field]: e.target.value } } : p))}
-                    style={{ background: "#202430", border: "1px solid #2b303d", color: "#f0f3f8", padding: "8px 10px", borderRadius: "8px", width: "100%", fontSize: "13px", outline: "none" }}
-                  >
-                    <option value="">— select column —</option>
-                    {headers.map((h) => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                </div>
-              ))}
-            </div>
-
-            <button
-              disabled={importing || !pf.mapping.name || !pf.mapping.price}
-              onClick={() => confirmPending(pf)}
-              style={{ background: "#2dd4bf", border: "none", color: "#042f2e", padding: "8px 18px", borderRadius: "8px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
-            >
-              <Check size={16} /> Import & Run AI Matcher
+            <button onClick={() => setPendingFiles((prev) => prev.filter((i) => i.id !== pf.id))} className="btn-ghost" style={{ padding: '4px' }}>
+              <X size={14} />
             </button>
           </div>
-        );
-      })}
+
+          {/* Mapping Controls */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '16px' }}>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                Product Title / Name *
+              </label>
+              <select
+                value={pf.mapping.name}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setPendingFiles((prev) => prev.map((item) => item.id === pf.id ? { ...item, mapping: { ...item.mapping, name: val } } : item));
+                }}
+                style={{ width: '100%', borderColor: pf.mapping.name ? 'var(--forest-border)' : 'var(--border-default)' }}
+              >
+                <option value="">-- Select Column --</option>
+                {pf.headers.map((h) => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                Quoted Price *
+              </label>
+              <select
+                value={pf.mapping.price}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setPendingFiles((prev) => prev.map((item) => item.id === pf.id ? { ...item, mapping: { ...item.mapping, price: val } } : item));
+                }}
+                style={{ width: '100%', borderColor: pf.mapping.price ? 'var(--forest-border)' : 'var(--border-default)' }}
+              >
+                <option value="">-- Select Column --</option>
+                {pf.headers.map((h) => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                Supplier SKU / MPN
+              </label>
+              <select
+                value={pf.mapping.sku}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setPendingFiles((prev) => prev.map((item) => item.id === pf.id ? { ...item, mapping: { ...item.mapping, sku: val } } : item));
+                }}
+                style={{ width: '100%' }}
+              >
+                <option value="">-- (Optional) --</option>
+                {pf.headers.map((h) => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                Stock / Availability
+              </label>
+              <select
+                value={pf.mapping.stock}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setPendingFiles((prev) => prev.map((item) => item.id === pf.id ? { ...item, mapping: { ...item.mapping, stock: val } } : item));
+                }}
+                style={{ width: '100%' }}
+              >
+                <option value="">-- (Optional) --</option>
+                {pf.headers.map((h) => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button
+              onClick={() => confirmPending(pf)}
+              disabled={importing || !pf.mapping.name || !pf.mapping.price}
+              className="btn-primary"
+              style={{ fontSize: '12px' }}
+            >
+              {importing ? (
+                <>
+                  <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Ingesting & Resolving Entities...
+                </>
+              ) : (
+                <>
+                  <Check size={14} /> Publish Ingestion
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      ))}
+
     </div>
   );
 }

@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Sliders, RefreshCw, DollarSign, ShieldAlert, FileText, Check, Download, Layers } from 'lucide-react';
+import { 
+  Sliders, RefreshCw, DollarSign, ShieldAlert, 
+  FileText, Check, Download, Layers, ShieldCheck, 
+  Plus, History, Settings
+} from 'lucide-react';
 
 export default function AdminSettings() {
   const [weights, setWeights] = useState({
@@ -15,6 +19,7 @@ export default function AdminSettings() {
   const [draftPOs, setDraftPOs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savedMsg, setSavedMsg] = useState('');
+  const [newCurrency, setNewCurrency] = useState({ code: 'USD', rate: 129.50 });
 
   const fetchData = async () => {
     setLoading(true);
@@ -27,10 +32,10 @@ export default function AdminSettings() {
 
       if (resSettings.scoringWeights) setWeights(resSettings.scoringWeights);
       if (resSettings.auditLogs) setAuditLogs(resSettings.auditLogs);
-      setFxRates(resFx);
-      setDraftPOs(resPo);
+      setFxRates(Array.isArray(resFx) ? resFx : []);
+      setDraftPOs(Array.isArray(resPo) ? resPo : []);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load admin settings:', err);
     } finally {
       setLoading(false);
     }
@@ -47,7 +52,7 @@ export default function AdminSettings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scoringWeights: weights })
       });
-      setSavedMsg('Scoring formula weights updated successfully!');
+      setSavedMsg('Scoring formula weights updated successfully.');
       setTimeout(() => setSavedMsg(''), 3000);
     } catch (err) {
       console.error(err);
@@ -68,146 +73,204 @@ export default function AdminSettings() {
   };
 
   if (loading) {
-    return <div style={{ color: '#949eb2', padding: '24px', textAlign: 'center' }}>Loading Admin Control Room...</div>;
+    return (
+      <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+        <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite', marginBottom: '8px' }} />
+        <div>Loading Admin Control Room...</div>
+      </div>
+    );
   }
 
   return (
-    <div style={{ maxWidth: '1240px', margin: '0 auto', color: '#f0f3f8' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Sliders size={22} color="#2dd4bf" /> Admin Control Room & Procurement Configuration
-        </h2>
-        <p style={{ fontSize: '13px', color: '#949eb2', marginTop: '4px' }}>
-          Tune recommendation formula weights, manage exchange rates (KES base currency), view audit trails, and export draft purchase orders.
+    <div className="animate-fade" style={{ maxWidth: '1280px', margin: '0 auto' }}>
+      
+      {/* ─── Header ─── */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
+          System Administration
+        </div>
+        <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+          Procurement Configuration & Control Room
+        </h1>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+          Tune 6-metric recommendation formulas, maintain multi-currency foreign exchange rates (KES base), and inspect audit logs.
         </p>
       </div>
 
       {savedMsg && (
-        <div style={{ background: 'rgba(45, 212, 191, 0.15)', color: '#2dd4bf', border: '1px solid #2dd4bf', padding: '10px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '13px', fontWeight: 600 }}>
+        <div className="panel" style={{ padding: '10px 16px', marginBottom: '16px', background: 'var(--color-success-bg)', color: 'var(--color-success-text)', fontSize: '12px' }}>
           ✓ {savedMsg}
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+      {/* ─── 2-Column Split: Formula Weights & FX Rates ─── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
         
-        {/* Recommendation Scoring Weight Sliders */}
-        <div style={{ background: '#181b24', border: '1px solid #2b303d', borderRadius: '14px', padding: '20px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Sliders size={18} color="#2dd4bf" /> Weighted Scoring Formula Sliders
-          </h3>
-          <p style={{ fontSize: '12px', color: '#949eb2', marginBottom: '16px' }}>
-            Adjust the importance of each parameter when calculating the <strong>Recommended Sourcing Supplier</strong>.
+        {/* 6-Metric Formula Sliders */}
+        <div className="panel" style={{ padding: '20px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <Sliders size={15} color="var(--forest-bright)" /> 6-Metric Scoring Formula Weights
+          </div>
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            Adjust parameter coefficients when calculating the Recommended Sourcing Supplier score.
           </p>
 
-          {[
-            ['w1_price', 'Price Competitiveness (Lower = Higher)', weights.w1_price],
-            ['w2_stock', 'Stock Availability & Quantity', weights.w2_stock],
-            ['w3_reliability', 'Supplier Historical Reliability', weights.w3_reliability],
-            ['w4_delivery', 'Delivery Speed & Lead Time', weights.w4_delivery],
-            ['w5_warranty', 'Warranty Terms & Support', weights.w5_warranty],
-            ['w6_freshness', 'Data Freshness & Recent Pricelists', weights.w6_freshness]
-          ].map(([key, label, val]) => (
-            <div key={key} style={{ marginBottom: '14px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
-                <span>{label}</span>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, color: '#2dd4bf' }}>
-                  {Math.round(val * 100)}%
-                </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {[
+              ['w1_price', 'Price Competitiveness (Lower = Higher)', weights.w1_price],
+              ['w2_stock', 'Stock Availability & Quantity', weights.w2_stock],
+              ['w3_reliability', 'Supplier Reliability Rating', weights.w3_reliability],
+              ['w4_delivery', 'Delivery Speed & Lead Time', weights.w4_delivery],
+              ['w5_warranty', 'Warranty Terms & Support', weights.w5_warranty],
+              ['w6_freshness', 'Data Freshness & Recent Pricelist', weights.w6_freshness]
+            ].map(([key, label, val]) => (
+              <div key={key}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '3px' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+                  <span className="font-mono" style={{ color: 'var(--forest-bright)', fontWeight: 700 }}>
+                    {Math.round((val || 0) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={val || 0}
+                  onChange={(e) => setWeights({ ...weights, [key]: parseFloat(e.target.value) })}
+                  style={{ width: '100%', accentColor: 'var(--forest-primary)', cursor: 'pointer' }}
+                />
               </div>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={val}
-                onChange={(e) => setWeights({ ...weights, [key]: parseFloat(e.target.value) })}
-                style={{ width: '100%', accentColor: '#2dd4bf', cursor: 'pointer' }}
-              />
-            </div>
-          ))}
+            ))}
+          </div>
 
           <button
             onClick={handleSaveWeights}
-            style={{ background: '#2dd4bf', border: 'none', color: '#042f2e', fontWeight: 700, padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', width: '100%', justifyContent: 'center', marginTop: '10px' }}
+            className="btn-primary"
+            style={{ width: '100%', marginTop: '16px', fontSize: '12px' }}
           >
-            <Check size={16} /> Apply Formula Weights
+            <Check size={14} /> Apply Formula Weights
           </button>
         </div>
 
-        {/* Exchange Rate Manager */}
-        <div style={{ background: '#181b24', border: '1px solid #2b303d', borderRadius: '14px', padding: '20px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <DollarSign size={18} color="#3b82f6" /> Base Currency Exchange Rates (Base: KES)
-          </h3>
-          <p style={{ fontSize: '12px', color: '#949eb2', marginBottom: '16px' }}>
-            Multi-currency pricelists are dynamically normalized into Kenyan Shillings (KES).
+        {/* Foreign Exchange Rates Manager */}
+        <div className="panel" style={{ padding: '20px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <DollarSign size={15} color="var(--copper-text)" /> Foreign Exchange Rates (Base Currency: KES)
+          </div>
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            Multi-currency pricelist lines are normalized into Kenyan Shillings (KES) using these rates.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* Active Rates Table */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
             {fxRates.map((r) => (
-              <div key={r.currency_code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#202430', padding: '10px 14px', borderRadius: '8px' }}>
-                <div>
-                  <span style={{ fontWeight: 700, fontSize: '14px' }}>1 {r.currency_code} = </span>
-                </div>
+              <div key={r.currency_code} className="panel" style={{ padding: '10px 14px', background: 'var(--bg-elevated)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="badge badge-forest font-mono">{r.currency_code}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>1 {r.currency_code} =</span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <input
                     type="number"
-                    step="0.1"
+                    step="0.01"
                     defaultValue={r.rate_to_base}
                     onBlur={(e) => handleUpdateFx(r.currency_code, parseFloat(e.target.value))}
-                    style={{ background: '#0f1117', border: '1px solid #2b303d', borderRadius: '6px', color: '#2dd4bf', padding: '4px 8px', fontSize: '13px', fontWeight: 700, width: '100px', textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace" }}
+                    className="font-mono"
+                    style={{ width: '90px', textAlign: 'right', fontWeight: 600, padding: '4px 8px', fontSize: '12px' }}
+                    disabled={r.currency_code === 'KES'}
                   />
-                  <span style={{ fontSize: '12px', color: '#949eb2' }}>KES</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>KES</span>
                 </div>
               </div>
             ))}
           </div>
+
+          {/* Add Currency Rate */}
+          <div style={{ background: 'var(--bg-primary)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+              Add / Update Exchange Rate
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                placeholder="USD / EUR"
+                value={newCurrency.code}
+                onChange={(e) => setNewCurrency({ ...newCurrency, code: e.target.value.toUpperCase() })}
+                style={{ width: '100px', textTransform: 'uppercase' }}
+              />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Rate in KES"
+                value={newCurrency.rate}
+                onChange={(e) => setNewCurrency({ ...newCurrency, rate: parseFloat(e.target.value) || 0 })}
+                className="font-mono"
+                style={{ flex: 1 }}
+              />
+              <button
+                onClick={() => {
+                  if (newCurrency.code && newCurrency.rate > 0) {
+                    handleUpdateFx(newCurrency.code, newCurrency.rate);
+                  }
+                }}
+                className="btn-secondary"
+                style={{ fontSize: '12px' }}
+              >
+                Set Rate
+              </button>
+            </div>
+          </div>
+
         </div>
 
       </div>
 
-      {/* Draft Purchase Orders Summary */}
-      <div style={{ background: '#181b24', border: '1px solid #2b303d', borderRadius: '14px', padding: '20px', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FileText size={18} color="#2dd4bf" /> Draft Purchase Orders (Batched by Recommended Supplier)
-            </h3>
-            <p style={{ fontSize: '12px', color: '#949eb2', marginTop: '2px' }}>
-              Automatically groups all active products by their highest-scoring sourcing supplier to streamline procurement.
-            </p>
+      {/* ─── Immutable Audit Logs ─── */}
+      <div className="panel" style={{ overflow: 'hidden' }}>
+        <div className="panel-header">
+          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <History size={15} color="var(--forest-bright)" /> System Audit Trail (Last 20 Actions)
           </div>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Immutable Ledger</span>
         </div>
 
-        {draftPOs.length === 0 ? (
-          <div style={{ fontSize: '13px', color: '#949eb2' }}>No draft purchase orders generated yet.</div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px' }}>
-            {draftPOs.map((group, gIdx) => {
-              const totalKes = group.items.reduce((sum, i) => sum + (i.price_in_base_currency || 0), 0);
-              return (
-                <div key={gIdx} style={{ background: '#202430', border: '1px solid #2b303d', borderRadius: '10px', padding: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ fontWeight: 700, fontSize: '14px', color: '#2dd4bf' }}>{group.supplier?.name}</div>
-                    <span style={{ fontSize: '11px', background: '#0f1117', padding: '2px 6px', borderRadius: '4px', color: '#949eb2' }}>
-                      {group.items.length} Line Items
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#949eb2', marginBottom: '10px' }}>
-                    Est. PO Total: <strong style={{ color: '#f0f3f8', fontFamily: "'IBM Plex Mono', monospace" }}>{totalKes.toLocaleString(undefined, { minimumFractionDigits: 2 })} KES</strong>
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#949eb2', maxHeight: '100px', overflowY: 'auto' }}>
-                    {group.items.map((it, iIdx) => (
-                      <div key={iIdx} style={{ padding: '2px 0', borderBottom: '1px solid #181b24' }}>
-                        • {it.canonical_name} ({it.price} {it.currency})
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <table className="enterprise-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Action</th>
+              <th>Target Entity</th>
+              <th>Entity ID</th>
+              <th>User</th>
+            </tr>
+          </thead>
+          <tbody>
+            {auditLogs.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--text-muted)' }}>
+                  No audit log entries recorded yet.
+                </td>
+              </tr>
+            ) : (
+              auditLogs.map((log) => (
+                <tr key={log.id}>
+                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {log.created_at ? new Date(log.created_at).toLocaleString() : '—'}
+                  </td>
+                  <td>
+                    <span className="badge badge-neutral font-mono">{log.action}</span>
+                  </td>
+                  <td style={{ color: 'var(--text-secondary)' }}>{log.entity_type}</td>
+                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {log.entity_id}
+                  </td>
+                  <td style={{ color: 'var(--text-secondary)' }}>{log.user_id || 'System'}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
     </div>

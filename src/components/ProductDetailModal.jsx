@@ -1,17 +1,21 @@
 import { useState } from 'react';
-import { X, Award, ShieldCheck, DollarSign, TrendingUp, Scissors, GitMerge, Layers, Clock } from 'lucide-react';
+import { 
+  X, Award, ShieldCheck, DollarSign, TrendingUp, 
+  Scissors, GitMerge, Layers, Clock, CheckCircle2, 
+  Building2, Tag, Percent
+} from 'lucide-react';
 
-export default function ProductDetailModal({ product, onClose, onSplit, onUpdate }) {
+export default function ProductDetailModal({ product, onClose, onUpdate }) {
+  const recOffer = product?.recommendedOffer;
+  const initialCost = recOffer ? (recOffer.cost_in_base_currency || recOffer.price_in_base_currency || 0) : 0;
   const [targetSellPrice, setTargetSellPrice] = useState(
-    product.recommendedOffer ? Math.round(product.recommendedOffer.price_in_base_currency * 1.25) : 0
+    initialCost > 0 ? Math.round(initialCost * 1.30) : 0
   );
 
   if (!product) return null;
 
-  const recOffer = product.recommendedOffer;
-
   const handleSplitItem = async (rawListingId) => {
-    if (confirm('Split this raw listing out into its own standalone product?')) {
+    if (confirm('Split this raw listing out into its own standalone canonical product?')) {
       try {
         await fetch('/api/products/split', {
           method: 'POST',
@@ -21,131 +25,203 @@ export default function ProductDetailModal({ product, onClose, onSplit, onUpdate
         if (onUpdate) onUpdate();
         onClose();
       } catch (err) {
-        console.error(err);
+        console.error('Failed to split product:', err);
       }
     }
   };
 
+  const grossProfit = targetSellPrice - initialCost;
+  const grossMarginPct = targetSellPrice > 0 ? ((grossProfit / targetSellPrice) * 100) : 0;
+
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-      <div style={{ background: '#181b24', border: '1px solid #2b303d', borderRadius: '16px', maxWidth: '900px', width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: '24px', color: '#f0f3f8', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div 
+        className="panel animate-fade" 
+        style={{ 
+          maxWidth: '900px', 
+          width: '100%', 
+          maxHeight: '90vh', 
+          overflowY: 'auto', 
+          padding: '24px', 
+          backgroundColor: 'var(--bg-surface)',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.6)'
+        }}
+      >
         
-        {/* Header */}
+        {/* ─── Modal Header ─── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
           <div>
-            <div style={{ fontSize: '12px', color: '#2dd4bf', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
-              Canonical Product Detail
+            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Canonical Product Specifications
             </div>
-            <h2 style={{ fontSize: '20px', fontWeight: 700, margin: '4px 0 0 0' }}>{product.canonical_name}</h2>
-            <div style={{ fontSize: '13px', color: '#949eb2', marginTop: '2px' }}>
-              Brand: <strong>{product.brand || 'Generic'}</strong> · Category: <strong>{product.category || 'Electronics'}</strong> · Model: <strong>{product.model_number || 'N/A'}</strong>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', margin: '2px 0 0 0' }}>
+              {product.canonical_name}
+            </h2>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span>Brand: <strong style={{ color: 'var(--text-secondary)' }}>{product.brand || 'Generic'}</strong></span>
+              <span>·</span>
+              <span>Category: <strong style={{ color: 'var(--text-secondary)' }}>{product.category || 'Electronics'}</strong></span>
+              {product.model_number && (
+                <>
+                  <span>·</span>
+                  <span>Model: <strong style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{product.model_number}</strong></span>
+                </>
+              )}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: '#202430', border: '1px solid #2b303d', color: '#f0f3f8', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer' }}>
-            <X size={16} />
+
+          <button onClick={onClose} className="btn-ghost" style={{ padding: '6px' }}>
+            <X size={18} />
           </button>
         </div>
 
-        {/* Recommended Sourcing Supplier Highlight */}
+        {/* ─── Recommended Supplier Highlight ─── */}
         {recOffer && (
-          <div style={{ background: 'linear-gradient(135deg, rgba(45, 212, 191, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)', border: '1px solid #2dd4bf', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+          <div 
+            className="panel" 
+            style={{ 
+              padding: '16px 20px', 
+              marginBottom: '20px', 
+              backgroundColor: 'var(--forest-light)', 
+              borderColor: 'var(--forest-border)' 
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#2dd4bf', fontWeight: 700 }}>
-                  <Award size={16} /> RECOMMENDED SOURCING SUPPLIER
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: 'var(--forest-bright)', textTransform: 'uppercase' }}>
+                  <Award size={14} /> Recommended Sourcing Supplier
                 </div>
-                <div style={{ fontSize: '16px', fontWeight: 700, marginTop: '2px' }}>{recOffer.supplier_name}</div>
-                <div style={{ fontSize: '12px', color: '#949eb2', marginTop: '2px' }}>
-                  Reliability: <strong>{recOffer.supplier.reliability_score}/10</strong> · Lead Time: <strong>{recOffer.supplier.avg_delivery_days} days</strong> · Warranty: <strong>{recOffer.supplier.warranty_terms_default}</strong>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                  {recOffer.supplier_name}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Lead Time: {recOffer.supplier?.avg_delivery_days ? `${recOffer.supplier.avg_delivery_days} days` : '3 days'} · Warranty: {recOffer.warranty_terms || recOffer.supplier?.warranty_terms_default || '1 Year'}
                 </div>
               </div>
 
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: '#2dd4bf', fontFamily: "'IBM Plex Mono', monospace" }}>
-                  {recOffer.price_in_base_currency.toLocaleString(undefined, { minimumFractionDigits: 2 })} KES
+                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                  KSh {Math.round(initialCost).toLocaleString()}
                 </div>
-                <div style={{ fontSize: '11px', color: '#949eb2' }}>
-                  ({recOffer.price} {recOffer.currency}) · Overall Score: <strong style={{ color: '#2dd4bf' }}>{recOffer.scoreInfo?.totalScore || 'N/A'}</strong>
+                <div style={{ fontSize: '11px', color: 'var(--forest-bright)', fontFamily: 'var(--font-mono)' }}>
+                  Overall Score: {recOffer.scoreInfo?.totalScore || 'N/A'}/100
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Margin Calculator */}
-        <div style={{ background: '#202430', border: '1px solid #2b303d', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: '#f0f3f8', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <DollarSign size={16} color="#2dd4bf" /> Interactive Margin Calculator (KES Base Currency)
+        {/* ─── Interactive Margin Calculator ─── */}
+        <div className="panel" style={{ padding: '16px 20px', marginBottom: '20px', backgroundColor: 'var(--bg-elevated)' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+            <DollarSign size={14} color="var(--copper-text)" /> Commercial Resale & Margin Simulator (KES Base)
           </div>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr 1fr', gap: '16px', alignItems: 'center' }}>
             <div>
-              <label style={{ fontSize: '11px', color: '#949eb2', display: 'block', marginBottom: '4px' }}>Target Resell Price (KES)</label>
+              <label style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                Target Retail (KES)
+              </label>
               <input
                 type="number"
                 value={targetSellPrice}
                 onChange={(e) => setTargetSellPrice(parseFloat(e.target.value) || 0)}
-                style={{ background: '#0f1117', border: '1px solid #2b303d', borderRadius: '8px', color: '#2dd4bf', padding: '8px 12px', fontSize: '14px', fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace", width: '180px', outline: 'none' }}
+                className="font-mono"
+                style={{ width: '100%', fontWeight: 700, color: 'var(--copper-text)' }}
               />
             </div>
 
-            {recOffer && (
-              <div style={{ flex: 1, display: 'flex', gap: '20px', background: '#0f1117', padding: '10px 16px', borderRadius: '8px', border: '1px solid #2b303d' }}>
-                <div>
-                  <div style={{ fontSize: '10px', color: '#949eb2', textTransform: 'uppercase' }}>Recommended Cost</div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, fontFamily: "'IBM Plex Mono', monospace" }}>{recOffer.price_in_base_currency.toFixed(2)} KES</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', color: '#949eb2', textTransform: 'uppercase' }}>Gross Profit</div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#2dd4bf', fontFamily: "'IBM Plex Mono', monospace" }}>
-                    {(targetSellPrice - recOffer.price_in_base_currency).toFixed(2)} KES
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '10px', color: '#949eb2', textTransform: 'uppercase' }}>Profit Margin</div>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: (targetSellPrice - recOffer.price_in_base_currency) > 0 ? '#3ddc97' : '#f43f5e', fontFamily: "'IBM Plex Mono', monospace" }}>
-                    {targetSellPrice > 0 ? (((targetSellPrice - recOffer.price_in_base_currency) / targetSellPrice) * 100).toFixed(1) : 0}%
-                  </div>
-                </div>
+            <div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Acquisition Cost</div>
+              <div style={{ fontSize: '14px', fontWeight: 600, fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                KSh {Math.round(initialCost).toLocaleString()}
               </div>
-            )}
+            </div>
+
+            <div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Unit Gross Profit</div>
+              <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: grossProfit >= 0 ? 'var(--forest-bright)' : 'var(--color-danger-text)', marginTop: '4px' }}>
+                KSh {Math.round(grossProfit).toLocaleString()}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Gross Margin</div>
+              <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: grossMarginPct >= 20 ? 'var(--forest-bright)' : 'var(--color-warning-text)', marginTop: '4px' }}>
+                {grossMarginPct.toFixed(1)}%
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* All Supplier Offers Grid */}
+        {/* ─── All Supplier Offers Matrix ─── */}
         <div style={{ marginBottom: '20px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>All Supplier Offers ({product.offers.length})</div>
-          <div style={{ background: '#0f1117', border: '1px solid #2b303d', borderRadius: '10px', overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1fr 1fr 40px', gap: '10px', padding: '10px 14px', fontSize: '11px', color: '#949eb2', textTransform: 'uppercase', borderBottom: '1px solid #2b303d' }}>
-              <div>Supplier</div><div>Quoted Price</div><div>Base Price (KES)</div><div>Availability</div><div>Action</div>
-            </div>
-            {product.offers.map((off) => {
-              const isRec = recOffer && recOffer.raw_listing_id === off.raw_listing_id;
-              return (
-                <div key={off.id} style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1fr 1fr 40px', gap: '10px', padding: '10px 14px', alignItems: 'center', fontSize: '13px', borderBottom: '1px solid #181b24', background: isRec ? 'rgba(45, 212, 191, 0.05)' : 'transparent' }}>
-                  <div>
-                    <div style={{ fontWeight: 500 }}>{off.supplier_name}</div>
-                    <div style={{ fontSize: '11px', color: '#949eb2' }}>{off.raw_name}</div>
-                  </div>
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{off.price} {off.currency}</div>
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: isRec ? 700 : 400, color: isRec ? '#2dd4bf' : '#f0f3f8' }}>
-                    {off.price_in_base_currency.toLocaleString(undefined, { minimumFractionDigits: 2 })} KES
-                  </div>
-                  <div>
-                    <span style={{ color: off.stock_status === 'in_stock' ? '#3ddc97' : '#f43f5e', fontSize: '12px' }}>
-                      ● {off.stock_status === 'in_stock' ? `${off.stock_qty || 'In'} Stock` : 'Out of Stock'}
-                    </span>
-                  </div>
-                  <div>
-                    {product.offers.length > 1 && (
-                      <button title="Split listing out of product" onClick={() => handleSplitItem(off.raw_listing_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#949eb2' }}>
-                        <Scissors size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+            Active Supplier Offers ({product.offers?.length || 0})
           </div>
+
+          <div className="panel" style={{ overflow: 'hidden' }}>
+            <table className="enterprise-table" style={{ fontSize: '12px' }}>
+              <thead>
+                <tr>
+                  <th>Supplier</th>
+                  <th>Raw Listing / SKU</th>
+                  <th style={{ textAlign: 'right' }}>Quoted</th>
+                  <th style={{ textAlign: 'right' }}>Base (KES)</th>
+                  <th style={{ textAlign: 'center' }}>Stock</th>
+                  <th style={{ textAlign: 'right' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(product.offers || []).map((off) => {
+                  const isRec = recOffer && recOffer.id === off.id;
+                  const baseCost = Math.round(off.cost_in_base_currency || off.price_in_base_currency || 0);
+
+                  return (
+                    <tr key={off.id} style={{ backgroundColor: isRec ? 'var(--forest-light)' : 'transparent' }}>
+                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {off.supplier_name}
+                        {isRec && <span className="badge badge-forest" style={{ marginLeft: '6px', fontSize: '9px' }}>Recommended</span>}
+                      </td>
+                      <td style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                        {off.supplier_sku || off.sku || '—'}
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                        {off.cost || off.price} {off.currency}
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                        KSh {baseCost.toLocaleString()}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className={`badge ${off.stock_status === 'in_stock' ? 'badge-success' : 'badge-danger'}`}>
+                          {off.quantity_available || off.stock_qty || 0} units
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        {product.offers.length > 1 && (
+                          <button
+                            onClick={() => handleSplitItem(off.raw_listing_id || off.id)}
+                            className="btn-ghost"
+                            style={{ padding: '3px 6px', fontSize: '10px', color: 'var(--text-muted)' }}
+                            title="Split this listing into a separate canonical product"
+                          >
+                            <Scissors size={12} /> Split
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Close Action */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} className="btn-secondary" style={{ fontSize: '12px' }}>
+            Close Inspector
+          </button>
         </div>
 
       </div>
