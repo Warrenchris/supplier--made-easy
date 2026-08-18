@@ -49,6 +49,7 @@ export default function MatchReviewQueue({ onUpdate }) {
   // Keyboard Navigation: [A] Approve, [R] Reject, [ArrowDown] Next, [ArrowUp] Prev
   const handleKeyDown = useCallback(
     (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
       if (!suggestions.length) return;
       const current = suggestions[selectedIndex];
       if (e.key === 'a' || e.key === 'A') {

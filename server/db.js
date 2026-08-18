@@ -275,9 +275,9 @@ export async function run(sql, params = []) {
       parsed_currency: params[9],
       parsed_stock_status: params[10],
       parsed_stock_qty: params[11] || 0,
-      canonical_product_id: null,
-      match_confidence: null,
-      match_status: 'unmatched',
+      canonical_product_id: params[12] !== undefined ? params[12] : null,
+      match_confidence: params[13] !== undefined ? params[13] : null,
+      match_status: params[14] || (params[12] ? 'confirmed' : 'unmatched'),
       created_at: new Date().toISOString()
     });
   } else if (norm.startsWith('insert into canonical_products')) {
