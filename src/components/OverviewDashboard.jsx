@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { 
   Package, Store, DollarSign, GitMerge, TrendingDown, 
   TrendingUp, ArrowRight, ShieldCheck, AlertCircle, 
-  Target, Layers, Zap, CheckCircle2, ChevronRight, Upload
+  Target, Layers, Zap, CheckCircle2, ChevronRight, Upload,
+  AlertTriangle, ArrowUpRight, Sparkles
 } from 'lucide-react';
 
 export default function OverviewDashboard({ onNavigate, onOpenImport }) {
   const [products, setProducts] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [matchSuggestions, setMatchSuggestions] = useState([]);
+  const [trends, setTrends] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -21,9 +23,24 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
           fetch('/api/match-suggestions').then((r) => r.json())
         ]);
 
-        setProducts(Array.isArray(prodRes) ? prodRes : []);
+        const prods = Array.isArray(prodRes) ? prodRes : [];
+        setProducts(prods);
         setSuppliers(Array.isArray(supRes) ? supRes : []);
         setMatchSuggestions(Array.isArray(matchRes) ? matchRes : []);
+
+        // Fetch price trend counts
+        let priceDropCount = 0;
+        let priceIncreaseCount = 0;
+        for (const p of prods.slice(0, 15)) {
+          try {
+            const tRes = await fetch(`/api/price-trends?productId=${p.id}`);
+            const tData = await tRes.json();
+            const primary = Array.isArray(tData) ? tData[0] : tData;
+            if (primary?.trend30d?.direction === 'down' || primary?.trend7d?.direction === 'down') priceDropCount++;
+            if (primary?.trend30d?.direction === 'up' || primary?.trend7d?.direction === 'up') priceIncreaseCount++;
+          } catch {}
+        }
+        setTrends({ drops: priceDropCount, increases: priceIncreaseCount });
       } catch (err) {
         console.error('Failed to load overview telemetry:', err);
       } finally {
@@ -34,7 +51,6 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
     fetchOverviewData();
   }, []);
 
-  // Compute operational telemetry
   const totalOffers = products.reduce((sum, p) => sum + (p.offers?.length || 0), 0);
   
   // Calculate potential procurement savings across all multi-supplier products
@@ -59,6 +75,7 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
         opportunities.push({
           product: p,
           bestOffer: lowest,
+          highestOffer: highest,
           savingPerUnit,
           batchSaving,
           supplierCount: offers.length,
@@ -79,8 +96,8 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
 
   if (loading) {
     return (
-      <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-        <div style={{ fontSize: '13px' }}>Loading Procurement Workspace...</div>
+      <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+        <div style={{ fontSize: '13px' }}>Loading Procurement Operations Cockpit...</div>
       </div>
     );
   }
@@ -89,10 +106,10 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
     <div className="animate-fade" style={{ maxWidth: '1280px', margin: '0 auto' }}>
       
       {/* ─── Operational Header ─── */}
-      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
+      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
-            Operations Cockpit
+          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>
+            Executive Sourcing Cockpit
           </div>
           <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>
             Good morning, Procurement Overview
@@ -102,110 +119,141 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
           <button onClick={onOpenImport} className="btn-secondary" style={{ fontSize: '12px' }}>
-            <Upload size={14} /> Import Price List
+            <Upload size={13} /> Import Price List
           </button>
           <button onClick={() => onNavigate('optimizer')} className="btn-primary" style={{ fontSize: '12px' }}>
-            <Target size={14} /> Launch Optimizer
+            <Target size={13} /> Optimize Sourcing
           </button>
         </div>
       </div>
 
-      {/* ─── Structured KPI Metric Strip ─── */}
+      {/* ─── 4-Question Executive KPI Strip ─── */}
       <div 
         className="panel"
         style={{ 
           display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', 
           marginBottom: '24px',
           overflow: 'hidden'
         }}
       >
-        <div style={{ padding: '16px 20px', borderRight: '1px solid var(--border-subtle)' }}>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>
-            Active Products
-          </div>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
-            {products.length.toLocaleString()}
-          </div>
-          <div style={{ fontSize: '11px', color: 'var(--forest-bright)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <CheckCircle2 size={12} /> Live canonical catalog
-          </div>
-        </div>
-
-        <div style={{ padding: '16px 20px', borderRight: '1px solid var(--border-subtle)' }}>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>
-            Supplier Offers
-          </div>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
-            {totalOffers.toLocaleString()}
-          </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Across {suppliers.length} active suppliers
-          </div>
-        </div>
-
-        <div style={{ padding: '16px 20px', borderRight: '1px solid var(--border-subtle)' }}>
-          <div style={{ fontSize: '11px', color: 'var(--copper-text)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>
-            Identified Arbitrage Potential
+        {/* Question 1: What can I save? */}
+        <div style={{ padding: '18px 20px', borderRight: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', color: 'var(--copper-text)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>
+              1. Potential Sourcing Savings
+            </span>
+            <span className="badge badge-recommendation" style={{ fontSize: '9px', padding: '1px 5px' }}>
+              Actionable
+            </span>
           </div>
           <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--copper-text)', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
             KSh {Math.round(totalPotentialSavings).toLocaleString()}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Across multi-supplier items
+            Identified across {opportunities.length} multi-supplier products
           </div>
         </div>
 
-        <div style={{ padding: '16px 20px' }}>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>
-            Pending Match Reviews
+        {/* Question 2: What needs my attention? */}
+        <div style={{ padding: '18px 20px', borderRight: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>
+              2. Requires Human Review
+            </span>
+            <span className={`badge ${matchSuggestions.length > 0 ? 'badge-warning' : 'badge-success'}`} style={{ fontSize: '9px', padding: '1px 5px' }}>
+              {matchSuggestions.length > 0 ? 'Action Needed' : 'Clean'}
+            </span>
           </div>
           <div style={{ fontSize: '24px', fontWeight: 700, color: matchSuggestions.length > 0 ? 'var(--color-warning-text)' : 'var(--text-primary)', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
-            {matchSuggestions.length}
+            {matchSuggestions.length} Listings
           </div>
-          <div style={{ fontSize: '11px', color: matchSuggestions.length > 0 ? 'var(--color-warning-text)' : 'var(--forest-bright)', marginTop: '4px' }}>
-            {matchSuggestions.length > 0 ? 'Requires human verification' : 'Queue fully reconciled'}
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+            {matchSuggestions.length > 0 ? (
+              <span onClick={() => onNavigate('queue')} style={{ color: 'var(--copper-text)', cursor: 'pointer', fontWeight: 600 }}>
+                Review mapping queue →
+              </span>
+            ) : (
+              'All supplier listings verified'
+            )}
+          </div>
+        </div>
+
+        {/* Question 3: Where are prices moving? */}
+        <div style={{ padding: '18px 20px', borderRight: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>
+              3. Price Movements (30D)
+            </span>
+            <span className="badge badge-insight" style={{ fontSize: '9px', padding: '1px 5px' }}>
+              Telemetry
+            </span>
+          </div>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
+            {trends.drops || 0} Drops <span style={{ fontSize: '16px', color: 'var(--forest-bright)' }}>↓</span>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+            {trends.increases || 0} price increases detected
+          </div>
+        </div>
+
+        {/* Question 4: What should I buy differently? */}
+        <div style={{ padding: '18px 20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>
+              4. Sourcing Opportunities
+            </span>
+            <span className="badge badge-forest" style={{ fontSize: '9px', padding: '1px 5px' }}>
+              Optimal
+            </span>
+          </div>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--forest-bright)', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
+            {opportunities.length} Items
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+            Ready for multi-vendor optimization
           </div>
         </div>
       </div>
 
-      {/* ─── Main Operations Split Grid ─── */}
+      {/* ─── Main Operations Split: Opportunities Feed + Action Center ─── */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '24px' }}>
         
-        {/* Left: Procurement Opportunities */}
+        {/* Left: Sourcing Opportunities (Visual Centerpiece) */}
         <div className="panel">
           <div className="panel-header">
             <div>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Target size={16} color="var(--forest-bright)" /> Top Procurement Opportunities
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Target size={15} color="var(--forest-bright)" /> Priority Sourcing Opportunities
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Highest spread items where optimal supplier selection yields immediate savings.
+                Products with the largest price spread between suppliers. Buying from the recommended vendor yields direct savings.
               </div>
             </div>
-            <button onClick={() => onNavigate('products')} className="btn-ghost" style={{ fontSize: '12px' }}>
-              View All <ChevronRight size={14} />
+            <button onClick={() => onNavigate('products')} className="btn-ghost" style={{ fontSize: '11px' }}>
+              View All ({products.length}) <ChevronRight size={13} />
             </button>
           </div>
 
           {opportunities.length === 0 ? (
-            <div style={{ padding: '36px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <Package size={28} style={{ opacity: 0.5, marginBottom: '8px' }} />
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <Package size={28} style={{ opacity: 0.4, marginBottom: '8px' }} />
               <div style={{ fontSize: '13px', fontWeight: 600 }}>No Multi-Supplier Catalog Items Yet</div>
-              <div style={{ fontSize: '12px', marginTop: '4px', maxWidth: '360px', margin: '4px auto 0' }}>
+              <div style={{ fontSize: '11px', marginTop: '4px', maxWidth: '360px', margin: '4px auto 0' }}>
                 Import pricelists from multiple suppliers to enable automated price comparison, spread detection, and procurement optimization.
               </div>
               <button onClick={onOpenImport} className="btn-primary" style={{ marginTop: '16px', fontSize: '12px' }}>
-                <Upload size={14} /> Import Supplier Pricelist
+                <Upload size={13} /> Import Supplier Pricelist
               </button>
             </div>
           ) : (
-            <div style={{ padding: '8px 0' }}>
+            <div style={{ padding: '6px 0' }}>
               {opportunities.slice(0, 5).map((op) => {
                 const prod = op.product;
                 const best = op.bestOffer;
+                const high = op.highestOffer;
                 return (
                   <div 
                     key={prod.id}
@@ -227,23 +275,34 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
                         </span>
                         <span className="badge badge-neutral">{prod.brand || 'Generic'}</span>
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        Best Supplier: <strong style={{ color: 'var(--text-secondary)' }}>{best.supplier_name}</strong> · {op.supplierCount} competing offers · {op.totalStock} units in stock
+                      
+                      {/* Data -> Insight -> Recommendation hierarchy */}
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', gap: '12px', alignItems: 'center', marginTop: '3px' }}>
+                        <span>
+                          <strong style={{ color: 'var(--forest-bright)' }}>{best.supplier_name}</strong>: KSh {Math.round(best.cost_in_base_currency || best.price_in_base_currency || 0).toLocaleString()}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          {high.supplier_name}: KSh {Math.round(high.cost_in_base_currency || high.price_in_base_currency || 0).toLocaleString()}
+                        </span>
+                        <span>·</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{op.totalStock} in stock</span>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px', textAlign: 'right' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', textAlign: 'right' }}>
                       <div>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--forest-bright)', fontFamily: 'var(--font-mono)' }}>
-                          KSh {Math.round(best.cost_in_base_currency || best.price_in_base_currency || 0).toLocaleString()}
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--copper-text)', fontFamily: 'var(--font-mono)' }}>
+                          Save KSh {Math.round(op.savingPerUnit).toLocaleString()}
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '3px' }}>/unit</span>
                         </div>
-                        <div style={{ fontSize: '11px', color: 'var(--copper-text)', fontFamily: 'var(--font-mono)' }}>
-                          Saves ~KSh {Math.round(op.savingPerUnit).toLocaleString()}/unit
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                          ~KSh {Math.round(op.batchSaving).toLocaleString()} on batch
                         </div>
                       </div>
 
                       <button 
-                        onClick={() => onNavigate('optimizer')}
+                        onClick={() => onNavigate('optimizer', prod)}
                         className="btn-secondary"
                         style={{ padding: '5px 10px', fontSize: '11px' }}
                       >
@@ -262,55 +321,55 @@ export default function OverviewDashboard({ onNavigate, onOpenImport }) {
           
           {/* Action Required: Review Queue */}
           <div className="panel" style={{ padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <GitMerge size={15} color="var(--copper-text)" /> Match Reconciliation
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <GitMerge size={14} color="var(--copper-text)" /> Entity Resolution
               </div>
               <span className={`badge ${matchSuggestions.length > 0 ? 'badge-warning' : 'badge-success'}`}>
                 {matchSuggestions.length} Pending
               </span>
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '12px' }}>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: '12px' }}>
               {matchSuggestions.length > 0
-                ? `${matchSuggestions.length} supplier listings require human verification before matching canonical inventory.`
-                : 'All incoming supplier records have been validated against the canonical catalog.'}
+                ? `${matchSuggestions.length} supplier listings require human verification before mapping to canonical inventory.`
+                : 'All supplier catalog rows verified against canonical product master records.'}
             </p>
             <button 
               onClick={() => onNavigate('queue')}
               className="btn-secondary" 
-              style={{ width: '100%', fontSize: '12px' }}
+              style={{ width: '100%', fontSize: '11px' }}
             >
               Open Reconciliation Queue
             </button>
           </div>
 
-          {/* Quick Intelligence Summary */}
+          {/* Quick Commerce Sync Status */}
           <div className="panel" style={{ padding: '16px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Zap size={15} color="var(--forest-bright)" /> System Intelligence
+            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Zap size={14} color="var(--forest-bright)" /> Storefront Operations
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Scoring Framework</span>
-                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>6-Metric Radar</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Pricing Policy</span>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Target 30% Markup</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Storefront Sync</span>
-                <span style={{ color: 'var(--forest-bright)', fontWeight: 500 }}>● Active (KES)</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Realmer Syndication</span>
+                <span style={{ color: 'var(--forest-bright)', fontWeight: 600 }}>● Active Feed</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Catalog Coverage</span>
-                <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{products.length} Products</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Active Vendors</span>
+                <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{suppliers.length} Vendors</span>
               </div>
             </div>
 
             <button 
-              onClick={() => onNavigate('settings')}
+              onClick={() => onNavigate('storefront')}
               className="btn-ghost" 
-              style={{ width: '100%', marginTop: '12px', fontSize: '11px' }}
+              style={{ width: '100%', marginTop: '10px', fontSize: '11px' }}
             >
-              Configure Parameters
+              Manage Storefront Economics
             </button>
           </div>
 
