@@ -18,9 +18,17 @@ import {
   ExternalLink, Sparkles, Building2, HelpCircle, Keyboard
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useToast } from './context/ToastContext';
 
 export default function App() {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState('overview');
+  const [currentRole, setCurrentRole] = useState(() => {
+    const token = localStorage.getItem('sme_auth_token') || 'admin-token';
+    if (token.startsWith('buyer')) return 'buyer';
+    if (token.startsWith('viewer')) return 'viewer';
+    return 'admin';
+  });
   const [optimizerProduct, setOptimizerProduct] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [pendingReviewsCount, setPendingReviewsCount] = useState(0);
@@ -271,14 +279,25 @@ export default function App() {
             )}
           </button>
 
-          {/* User Profile */}
+          {/* User Profile & Role Switcher */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '8px', borderLeft: '1px solid var(--border-subtle)' }}>
-            <div style={{ width: '26px', height: '26px', borderRadius: 'var(--radius-xs)', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+            <div style={{ width: '26px', height: '26px', borderRadius: 'var(--radius-xs)', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--forest-bright)' }}>
               <User size={14} />
             </div>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'none', md: 'block' }}>
-              Senior Buyer
-            </div>
+            <select
+              value={currentRole}
+              onChange={(e) => {
+                const role = e.target.value;
+                setCurrentRole(role);
+                localStorage.setItem('sme_auth_token', `${role}-token`);
+                toast.info(`Switched active session to ${role.toUpperCase()} role.`, 'Active Role Changed');
+              }}
+              style={{ fontSize: '11px', padding: '2px 6px', height: '26px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xs)', color: 'var(--text-secondary)' }}
+            >
+              <option value="admin">Admin (Full Access)</option>
+              <option value="buyer">Buyer (Operational)</option>
+              <option value="viewer">Viewer (Read Only)</option>
+            </select>
           </div>
 
         </div>

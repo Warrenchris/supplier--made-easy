@@ -4,6 +4,8 @@ import {
   RefreshCw, Filter, Search, ShieldCheck, 
   ChevronRight, Calendar, ArrowUpDown
 } from 'lucide-react';
+import api from '../services/apiClient';
+import { useToast } from '../context/ToastContext';
 
 export default function PriceTrendTracker() {
   const [products, setProducts] = useState([]);
@@ -12,28 +14,27 @@ export default function PriceTrendTracker() {
   const [search, setSearch] = useState('');
   const [movementFilter, setMovementFilter] = useState('ALL'); // ALL, DROPS, INCREASES, STABLE
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const toast = useToast();
 
   const fetchTrendsData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/canonical-products');
-      const data = await res.json();
+      const data = await api.get('/api/canonical-products');
       const prods = Array.isArray(data) ? data : [];
       setProducts(prods);
 
       const trendMap = {};
-      for (const p of prods) {
+      await Promise.all(prods.map(async (p) => {
         try {
-          const tRes = await fetch(`/api/price-trends?productId=${p.id}`);
-          const tData = await tRes.json();
+          const tData = await api.get(`/api/price-trends?productId=${p.id}`);
           trendMap[p.id] = Array.isArray(tData) ? tData : [tData];
         } catch {
           trendMap[p.id] = [];
         }
-      }
+      }));
       setTrends(trendMap);
     } catch (err) {
-      console.error('Failed to load price trends:', err);
+      toast.error(err.message, 'Failed to Load Market Trends');
     } finally {
       setLoading(false);
     }

@@ -4,8 +4,11 @@ import {
   Scissors, GitMerge, Layers, Clock, CheckCircle2, 
   Building2, Tag, Percent
 } from 'lucide-react';
+import api from '../services/apiClient';
+import { useToast } from '../context/ToastContext';
 
 export default function ProductDetailModal({ product, onClose, onUpdate }) {
+  const toast = useToast();
   const recOffer = product?.recommendedOffer;
   const initialCost = recOffer ? (recOffer.cost_in_base_currency || recOffer.price_in_base_currency || 0) : 0;
   const [targetSellPrice, setTargetSellPrice] = useState(
@@ -17,15 +20,12 @@ export default function ProductDetailModal({ product, onClose, onUpdate }) {
   const handleSplitItem = async (rawListingId) => {
     if (confirm('Split this raw listing out into its own standalone canonical product?')) {
       try {
-        await fetch('/api/products/split', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rawListingId })
-        });
+        const res = await api.post('/api/products/split', { rawListingId });
+        toast.success(`Listing split into new standalone product: ${res.newProduct?.canonical_name || 'Created'}`, 'Product Split Successfully');
         if (onUpdate) onUpdate();
         onClose();
       } catch (err) {
-        console.error('Failed to split product:', err);
+        toast.error(err.message, 'Failed to Split Product');
       }
     }
   };

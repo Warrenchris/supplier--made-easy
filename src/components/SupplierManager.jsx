@@ -4,6 +4,8 @@ import {
   Check, ChevronDown, ChevronUp, Zap, ExternalLink, 
   Building2, Calendar, DollarSign, Award, X
 } from 'lucide-react';
+import api from '../services/apiClient';
+import { useToast } from '../context/ToastContext';
 
 export default function SupplierManager() {
   const [suppliers, setSuppliers] = useState([]);
@@ -18,15 +20,15 @@ export default function SupplierManager() {
     avg_delivery_days: 3,
     warranty_terms_default: '1 Year Warranty'
   });
+  const toast = useToast();
 
   const fetchSuppliers = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/suppliers');
-      const data = await res.json();
+      const data = await api.get('/api/suppliers');
       setSuppliers(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Failed to fetch suppliers:', err);
+      toast.error(err.message, 'Failed to Load Suppliers');
     } finally {
       setLoading(false);
     }
@@ -38,14 +40,14 @@ export default function SupplierManager() {
 
   const handleCreateSupplier = async (e) => {
     e.preventDefault();
-    if (!newSup.name) return;
+    if (!newSup.name) {
+      toast.error('Supplier name is required.', 'Validation Error');
+      return;
+    }
     try {
-      await fetch('/api/suppliers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSup)
-      });
+      await api.post('/api/suppliers', newSup);
       setShowAddModal(false);
+      toast.success(`Supplier "${newSup.name}" successfully registered.`, 'Supplier Created');
       setNewSup({
         name: '',
         contact_info: '',
@@ -56,7 +58,7 @@ export default function SupplierManager() {
       });
       fetchSuppliers();
     } catch (err) {
-      console.error('Failed to create supplier:', err);
+      toast.error(err.message, 'Failed to Register Supplier');
     }
   };
 

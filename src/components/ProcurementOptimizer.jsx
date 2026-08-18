@@ -1,22 +1,25 @@
 import { useState, useEffect } from 'react';
 import { 
-  Target, Zap, DollarSign, TrendingDown, ChevronDown, 
-  CheckCircle2, AlertCircle, Info, ArrowRight, ShieldCheck, 
-  FileCheck, Sparkles, Layers, RefreshCw
+  Cpu, Check, ArrowRight, ShieldCheck, DollarSign, 
+  Truck, Award, AlertTriangle, Layers, FileCheck, 
+  ChevronRight, RefreshCw, BarChart2, Target, Zap
 } from 'lucide-react';
+import api from '../services/apiClient';
+import { useToast } from '../context/ToastContext';
 
 export default function ProcurementOptimizer({ preselectedProduct }) {
   const [products, setProducts] = useState([]);
-  const [selectedProductId, setSelectedProductId] = useState('');
-  const [quantity, setQuantity] = useState(20);
+  const [selectedProductId, setSelectedProductId] = useState(preselectedProduct?.id || '');
+  const [quantity, setQuantity] = useState(10);
   const [mode, setMode] = useState('best_value');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const toast = useToast();
 
   useEffect(() => {
-    fetch('/api/canonical-products')
-      .then((r) => r.json())
+    api.get('/api/canonical-products')
       .then((data) => {
         const prods = Array.isArray(data) ? data : [];
         setProducts(prods);
@@ -26,7 +29,9 @@ export default function ProcurementOptimizer({ preselectedProduct }) {
           setSelectedProductId(prods[0].id);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        toast.error(err.message, 'Failed to Load Products');
+      });
   }, [preselectedProduct]);
 
   const selectedProduct = products.find((p) => p.id === selectedProductId);
@@ -37,19 +42,15 @@ export default function ProcurementOptimizer({ preselectedProduct }) {
     setResult(null);
     setSaveSuccessMsg('');
     try {
-      const res = await fetch('/api/procurement/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          canonicalProductId: selectedProductId,
-          quantity: parseInt(quantity) || 1,
-          mode
-        })
+      const data = await api.post('/api/procurement/optimize', {
+        canonicalProductId: selectedProductId,
+        quantity: parseInt(quantity) || 1,
+        mode
       });
-      const data = await res.json();
       setResult(data);
     } catch (err) {
       setResult({ success: false, error: err.message });
+      toast.error(err.message, 'Optimizer Calculation Failed');
     } finally {
       setLoading(false);
     }
@@ -63,23 +64,22 @@ export default function ProcurementOptimizer({ preselectedProduct }) {
 
   const handleSaveDecision = async () => {
     if (!selectedProductId || !result?.success) return;
+    setSaving(true);
     try {
-      const res = await fetch('/api/procurement/decide', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          canonicalProductId: selectedProductId,
-          quantity: parseInt(quantity),
-          mode
-        })
+      const data = await api.post('/api/procurement/decide', {
+        canonicalProductId: selectedProductId,
+        quantity: parseInt(quantity),
+        mode
       });
-      const data = await res.json();
       if (data.success) {
         setSaveSuccessMsg(`Decision snapshot committed successfully (ID: ${data.decision.id})`);
+        toast.success(`Purchase allocation of ${quantity} units locked across ${data.decision.allocations?.length || 1} suppliers.`, 'Sourcing Decision Committed');
         setTimeout(() => setSaveSuccessMsg(''), 4000);
       }
     } catch (err) {
-      alert('Failed to save decision: ' + err.message);
+      toast.error(err.message, 'Failed to Commit Decision');
+    } finally {
+      setSaving(false);
     }
   };
 

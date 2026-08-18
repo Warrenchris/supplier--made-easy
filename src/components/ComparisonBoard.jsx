@@ -7,6 +7,8 @@ import {
   Building2, TrendingDown, TrendingUp
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import api from '../services/apiClient';
+import { useToast } from '../context/ToastContext';
 
 export default function ComparisonBoard({ onOptimizeProduct }) {
   const [products, setProducts] = useState([]);
@@ -19,15 +21,15 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
   const [expanded, setExpanded] = useState({});
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [targetSellPrice, setTargetSellPrice] = useState(0);
+  const toast = useToast();
 
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/canonical-products');
-      const data = await res.json();
+      const data = await api.get('/api/canonical-products');
       setProducts(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Failed to fetch canonical products:', err);
+      toast.error(err.message, 'Failed to Load Canonical Catalog');
     } finally {
       setLoading(false);
     }
@@ -108,15 +110,12 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
   const handleSplitItem = async (rawListingId) => {
     if (confirm('Split this raw listing out into its own standalone canonical product?')) {
       try {
-        await fetch('/api/products/split', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rawListingId })
-        });
+        const res = await api.post('/api/products/split', { rawListingId });
+        toast.success(`Listing split into new standalone product: ${res.newProduct?.canonical_name || 'Created'}`, 'Product Split Successfully');
         fetchProducts();
         setSelectedProduct(null);
       } catch (err) {
-        console.error('Failed to split product:', err);
+        toast.error(err.message, 'Product Split Failed');
       }
     }
   };
