@@ -7,8 +7,12 @@ import { optimizeProcurement } from './procurementOptimizer.js';
 import { calculatePriceTrend, getProductTrends } from './priceTrendEngine.js';
 import { getPublicProductFeed, getInternalEconomicsFeed, getStorefrontSettings, updateStorefrontSettings, calculateRetailPrice } from './storefrontSync.js';
 import { productRepo, offerRepo, supplierRepo, priceObservationRepo, procurementDecisionRepo } from './repositories/index.js';
+import { authenticate, requireAuth, requireRole, generateToken, PRESET_USERS } from './auth.js';
 
 const router = express.Router();
+
+// Attach global token / authentication parser
+router.use(authenticate);
 
 // ─── Health Check ───────────────────────────────────────────────────────────
 
@@ -16,9 +20,40 @@ router.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     uptime: Math.round(process.uptime()),
-    version: '3.0.0',
+    version: '3.1.0',
     timestamp: new Date().toISOString()
   });
+});
+
+// ─── Authentication & User Session ──────────────────────────────────────────
+
+router.post('/auth/login', (req, res) => {
+  const { role = 'buyer', email, password } = req.body;
+  const user = PRESET_USERS[role] || {
+    id: `usr_${Date.now()}`,
+    email: email || `${role}@supplier-made-easy.co.ke`,
+    role,
+    name: role === 'admin' ? 'Lead Administrator' : role === 'buyer' ? 'Senior Buyer' : 'Catalog Viewer'
+  };
+
+  const token = generateToken(user);
+  res.json({
+    success: true,
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      name: user.name
+    }
+  });
+});
+
+router.get('/auth/me', (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ authenticated: false, user: null });
+  }
+  res.json({ authenticated: true, user: req.user });
 });
 
 // ─── Canonical Products with Supplier Offers & Scoring ──────────────────────
@@ -34,7 +69,6 @@ router.get('/canonical-products', async (req, res) => {
     for (const p of products) {
       const offers = await offerRepo.findByProduct(p.id);
 
-      // If no first-class offers, fall back to raw_listings (legacy compatibility)
       let enrichedOffers = offers;
       if (!offers.length) {
         const listings = await query(
@@ -137,7 +171,7 @@ router.get('/match-suggestions', async (req, res) => {
   }
 });
 
-router.post('/match-suggestions/:id/approve', async (req, res) => {
+router.post('/match-suggestions/:id/approve', requireRole(['buyer', 'admin']), async (req, res) => {
   try {
     const { id } = req.params;
     const sug = await get(`SELECT * FROM match_suggestions WHERE id = ?`, [id]);
@@ -156,8 +190,10 @@ router.post('/match-suggestions/:id/approve', async (req, res) => {
     }
 
     await run(`UPDATE match_suggestions SET status = 'approved', reviewed_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
-    await run(`INSERT INTO audit_logs (id, action, entity_type, entity_id, after) VALUES (?, 'APPROVE_MATCH', 'match_suggestion', ?, ?)`,
-      [`aud_${Date.now()}`, id, JSON.stringify({ canonical_product_id: cpId })]);
+    await run(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'APPROVE_MATCH', 'match_suggestion', ?, ?)`,
+      [`aud_${Date.now()}`, req.user.id, id, JSON.stringify({ canonical_product_id: cpId })]
+    );
 
     res.json({ success: true, canonical_product_id: cpId });
   } catch (err) {
@@ -165,10 +201,14 @@ router.post('/match-suggestions/:id/approve', async (req, res) => {
   }
 });
 
-router.post('/match-suggestions/:id/reject', async (req, res) => {
+router.post('/match-suggestions/:id/reject', requireRole(['buyer', 'admin']), async (req, res) => {
   try {
     const { id } = req.params;
     await run(`UPDATE match_suggestions SET status = 'rejected', reviewed_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
+    await run(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'REJECT_MATCH', 'match_suggestion', ?, '{}')`,
+      [`aud_${Date.now()}`, req.user.id, id]
+    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -177,20 +217,24 @@ router.post('/match-suggestions/:id/reject', async (req, res) => {
 
 // ─── Product Merge / Split ──────────────────────────────────────────────────
 
-router.post('/products/merge', async (req, res) => {
+router.post('/products/merge', requireRole(['buyer', 'admin']), async (req, res) => {
   try {
     const { targetProductId, sourceProductId } = req.body;
     await productRepo.merge(targetProductId, sourceProductId);
+    await run(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, before, after) VALUES (?, ?, 'MERGE_PRODUCTS', 'canonical_product', ?, ?, ?)`,
+      [`aud_${Date.now()}`, req.user.id, targetProductId, JSON.stringify({ sourceProductId }), JSON.stringify({ targetProductId })]
+    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.post('/products/split', async (req, res) => {
+router.post('/products/split', requireRole(['buyer', 'admin']), async (req, res) => {
   try {
     const { rawListingId } = req.body;
-    const newProduct = await productRepo.split(rawListingId);
+    const newProduct = await productRepo.split(rawListingId, req.user.id);
     res.json({ success: true, newCanonicalProductId: newProduct.id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -202,7 +246,6 @@ router.post('/products/split', async (req, res) => {
 router.get('/suppliers', async (req, res) => {
   try {
     const suppliers = await supplierRepo.findAll();
-    // Enrich with last import date
     const enriched = [];
     for (const s of suppliers) {
       const lastImport = await supplierRepo.getLastImportDate(s.id);
@@ -214,9 +257,13 @@ router.get('/suppliers', async (req, res) => {
   }
 });
 
-router.post('/suppliers', async (req, res) => {
+router.post('/suppliers', requireRole(['admin']), async (req, res) => {
   try {
     const supplier = await supplierRepo.create(req.body);
+    await run(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'CREATE_SUPPLIER', 'supplier', ?, ?)`,
+      [`aud_${Date.now()}`, req.user.id, supplier.id, JSON.stringify(req.body)]
+    );
     res.json({ success: true, id: supplier.id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -234,10 +281,17 @@ router.get('/exchange-rates', async (req, res) => {
   }
 });
 
-router.post('/exchange-rates', async (req, res) => {
+router.post('/exchange-rates', requireRole(['admin']), async (req, res) => {
   try {
     const { currency_code, rate_to_base } = req.body;
+    if (!currency_code || isNaN(parseFloat(rate_to_base))) {
+      return res.status(400).json({ error: 'currency_code and numeric rate_to_base are required' });
+    }
     await setExchangeRate(currency_code, parseFloat(rate_to_base));
+    await run(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'UPDATE_EXCHANGE_RATE', 'exchange_rate', ?, ?)`,
+      [`aud_${Date.now()}`, req.user.id, currency_code, JSON.stringify({ currency_code, rate_to_base: parseFloat(rate_to_base) })]
+    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -257,11 +311,17 @@ router.get('/admin/settings', async (req, res) => {
   }
 });
 
-router.post('/admin/settings', async (req, res) => {
+router.post('/admin/settings', requireRole(['admin']), async (req, res) => {
   try {
     const { scoringWeights, storefrontSettings } = req.body;
     if (scoringWeights) updateScoringWeights(scoringWeights);
     if (storefrontSettings) updateStorefrontSettings(storefrontSettings);
+
+    await run(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'UPDATE_ADMIN_SETTINGS', 'settings', 'global', ?)`,
+      [`aud_${Date.now()}`, req.user.id, JSON.stringify({ scoringWeights, storefrontSettings })]
+    );
+
     res.json({
       success: true,
       scoringWeights: getScoringWeights(),
@@ -289,37 +349,32 @@ router.post('/procurement/optimize', async (req, res) => {
 
 // ─── Procurement Decisions ──────────────────────────────────────────────────
 
-router.post('/procurement/decide', async (req, res) => {
+router.post('/procurement/decide', requireRole(['buyer', 'admin']), async (req, res) => {
   try {
     const { canonicalProductId, quantity, mode, orderId } = req.body;
     if (!canonicalProductId || !quantity) {
       return res.status(400).json({ error: 'canonicalProductId and quantity are required' });
     }
 
-    // Run optimizer
     const optimization = await optimizeProcurement(canonicalProductId, parseInt(quantity), mode || 'best_value');
 
-    if (!optimization.success) {
-      return res.status(400).json({ error: optimization.error, reasoning: optimization.reasoning });
-    }
-
-    // Save immutable decision snapshot
-    const decision = await procurementDecisionRepo.create({
-      order_id: orderId || null,
+    const decision = await procurementDecisionRepo.save({
+      order_id: orderId || `ord_${Date.now()}`,
       canonical_product_id: canonicalProductId,
       requested_quantity: parseInt(quantity),
       optimization_mode: mode || 'best_value',
       allocations: optimization.allocations,
-      total_acquisition_cost: optimization.totalCost,
-      supplier_scores_snapshot: optimization.allocations.map((a) => ({
-        supplier: a.supplier,
-        score: a.score,
-        quantity: a.quantity
-      })),
-      status: 'draft'
+      total_acquisition_cost: optimization.totalAcquisitionCost,
+      supplier_scores_snapshot: optimization.supplierScoresSnapshot || {},
+      created_by: req.user.id
     });
 
-    res.json({ success: true, decision, optimization });
+    await run(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'COMMIT_PROCUREMENT_DECISION', 'procurement_decision', ?, ?)`,
+      [`aud_${Date.now()}`, req.user.id, decision.id, JSON.stringify(decision)]
+    );
+
+    res.json({ success: true, decision });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -334,37 +389,24 @@ router.get('/procurement/decisions', async (req, res) => {
   }
 });
 
-router.patch('/procurement/decisions/:id/status', async (req, res) => {
-  try {
-    const { status } = req.body;
-    const updated = await procurementDecisionRepo.updateStatus(req.params.id, status);
-    res.json({ success: true, decision: updated });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // ─── Price Trends ───────────────────────────────────────────────────────────
 
 router.get('/price-trends', async (req, res) => {
   try {
     const { productId, supplierId } = req.query;
-    if (!productId) {
-      return res.status(400).json({ error: 'productId query parameter is required' });
-    }
-    if (supplierId) {
-      const trend = await calculatePriceTrend(productId, supplierId);
-      res.json(trend);
-    } else {
-      const trends = await getProductTrends(productId);
+    if (productId) {
+      const trends = await calculatePriceTrend(productId, supplierId || null);
       res.json(trends);
+    } else {
+      const allTrends = await getProductTrends();
+      res.json(allTrends);
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── Storefront Sync ────────────────────────────────────────────────────────
+// ─── Storefront Sync (Public & Internal) ────────────────────────────────────
 
 router.get('/storefront/products', async (req, res) => {
   try {
@@ -384,59 +426,64 @@ router.get('/internal/storefront-economics', async (req, res) => {
   }
 });
 
-router.post('/storefront/settings', async (req, res) => {
+router.post('/storefront/settings', requireRole(['admin']), async (req, res) => {
   try {
     const updated = updateStorefrontSettings(req.body);
+    await run(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'UPDATE_STOREFRONT_SETTINGS', 'storefront_settings', 'global', ?)`,
+      [`aud_${Date.now()}`, req.user.id, JSON.stringify(updated)]
+    );
     res.json({ success: true, settings: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── Purchase Order Batch Draft ─────────────────────────────────────────────
+// ─── Purchase Order Drafts ──────────────────────────────────────────────────
 
 router.post('/purchase-orders/draft', async (req, res) => {
   try {
     const products = await productRepo.findAll({ excludeMerged: true });
     const suppliers = await supplierRepo.findAll();
+    const rates = await getExchangeRates();
 
-    const poGroups = {};
+    const poBySupplier = {};
 
     for (const p of products) {
       const offers = await offerRepo.findByProduct(p.id);
       if (!offers.length) continue;
 
-      let recOffer = null;
-      let maxScore = -1;
+      let bestOffer = null;
+      let highestScore = -1;
 
       offers.forEach((o) => {
-        const supplier = o.supplier || suppliers.find((s) => s.id === o.supplier_id) || {};
-        const scoreInfo = calculateSupplierIntelligence(o, offers, supplier);
-        if (scoreInfo.totalScore > maxScore) {
-          maxScore = scoreInfo.totalScore;
-          recOffer = { ...o, supplier };
+        const sup = suppliers.find((s) => s.id === o.supplier_id) || {};
+        const score = calculateSupplierIntelligence(o, offers, sup);
+        if (score.totalScore > highestScore) {
+          highestScore = score.totalScore;
+          bestOffer = { ...o, supplier: sup, scoreInfo: score };
         }
       });
 
-      if (recOffer) {
-        if (!poGroups[recOffer.supplier_id]) {
-          poGroups[recOffer.supplier_id] = {
-            supplier: recOffer.supplier,
+      if (bestOffer && bestOffer.supplier_id) {
+        if (!poBySupplier[bestOffer.supplier_id]) {
+          poBySupplier[bestOffer.supplier_id] = {
+            supplier: bestOffer.supplier,
             items: []
           };
         }
-        poGroups[recOffer.supplier_id].items.push({
+        poBySupplier[bestOffer.supplier_id].items.push({
           productId: p.id,
           productName: p.canonical_name,
-          sku: recOffer.supplier_sku,
-          cost: recOffer.cost,
-          currency: recOffer.currency,
-          costInKES: recOffer.cost_in_base_currency
+          sku: bestOffer.supplier_sku,
+          cost: bestOffer.cost,
+          currency: bestOffer.currency,
+          costInKES: bestOffer.cost_in_base_currency
         });
       }
     }
 
-    res.json(Object.values(poGroups));
+    res.json(Object.values(poBySupplier));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -444,9 +491,12 @@ router.post('/purchase-orders/draft', async (req, res) => {
 
 // ─── Data Ingestion ─────────────────────────────────────────────────────────
 
-router.post('/imports', async (req, res) => {
+router.post('/imports', requireRole(['buyer', 'admin']), async (req, res) => {
   try {
     const { supplier_name, currency, items } = req.body;
+    if (!supplier_name || !Array.isArray(items)) {
+      return res.status(400).json({ error: 'supplier_name and items array are required' });
+    }
 
     let supplier = await supplierRepo.findByName(supplier_name.trim());
     if (!supplier) {
@@ -477,6 +527,11 @@ router.post('/imports', async (req, res) => {
       // Process through Product Identity Engine
       await processListing(rlId);
     }
+
+    await run(
+      `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'INGEST_PRICELIST', 'supplier_import', ?, ?)`,
+      [`aud_${Date.now()}`, req.user.id, importId, JSON.stringify({ supplier: supplier_name, count: items.length })]
+    );
 
     res.json({ success: true, importId, count: createdListingIds.length });
   } catch (err) {

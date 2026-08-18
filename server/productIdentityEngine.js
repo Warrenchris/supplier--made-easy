@@ -316,21 +316,40 @@ export function calculateSimilarity(normalized, canonical) {
         totalScore += 2.0;
         signals.push(`Exact model match: ${normalized.model}`);
       } else {
-        const diffInNorm = normTokens.filter((nt) => !canTokens.some((ct) => areTokensEquivalent(nt, ct)));
-        const diffInCan = canTokens.filter((ct) => !normTokens.some((nt) => areTokensEquivalent(ct, nt)));
+        // Count occurrences of each token (multiset comparison)
+        const countMap = (tokens) => {
+          const m = {};
+          tokens.forEach((t) => { m[t] = (m[t] || 0) + 1; });
+          return m;
+        };
+        const normMap = countMap(normTokens);
+        const canMap = countMap(canTokens);
+        const allKeys = new Set([...Object.keys(normMap), ...Object.keys(canMap)]);
+
+        const diffs = [];
+        for (const k of allKeys) {
+          const countNorm = normMap[k] || 0;
+          const countCan = canMap[k] || 0;
+          if (countNorm !== countCan) {
+            // Check if this token is covered by equivalence
+            const isEquiv = EQUIVALENT_TOKEN_GROUPS.some((g) => g.has(k));
+            if (!isEquiv) {
+              diffs.push(k);
+            }
+          }
+        }
 
         // Handle optional Gen specification (e.g. ThinkPad E14 Gen 5 vs ThinkPad E14)
-        const isGenOmission = (diffInNorm.length === 2 && diffInNorm[0] === 'GEN' && diffInCan.length === 0) ||
-                             (diffInCan.length === 2 && diffInCan[0] === 'GEN' && diffInNorm.length === 0);
+        const isGenOmission = diffs.length === 2 && diffs.includes('GEN');
 
         if (isGenOmission) {
           totalScore += 1.5;
           signals.push(`Model series match (generation unspecified): ${normalized.model} ≈ ${cModel}`);
-        } else if (diffInNorm.length > 0 || diffInCan.length > 0) {
+        } else if (diffs.length > 0) {
           // FAIL-CLOSED RULE:
           // Any distinguishing suffix or modifier token that is not in the equivalence list
           // constitutes a model variant conflict by default (e.g. 990 EVO vs 990 EVO Plus,
-          // 870 EVO vs 870 QVO, MX Master 3 vs 3S, M3 vs M3 Pro).
+          // 870 EVO vs 870 QVO, MX Master 3 vs 3S, MacBook Pro M3 vs M3 Pro).
           return {
             confidence: 0.20,
             signals: [`Model variant conflict: ${normalized.model} vs ${cModel}`],

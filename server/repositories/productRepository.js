@@ -89,17 +89,45 @@ export async function merge(targetId, sourceId) {
   );
 }
 
-export async function split(rawListingId) {
+export async function split(rawListingId, userId = 'sys') {
   const listing = await get(`SELECT * FROM raw_listings WHERE id = ?`, [rawListingId]);
   if (!listing) throw new Error('Listing not found');
 
+  const oldCanonicalId = listing.canonical_product_id;
+
   const newProduct = await create({
     canonical_name: listing.raw_name,
-    brand: 'Generic',
-    category: 'Electronics',
+    brand: listing.brand || 'Generic',
+    category: listing.category || 'Electronics',
     model_number: listing.raw_sku || ''
   });
 
-  await run(`UPDATE raw_listings SET canonical_product_id = ? WHERE id = ?`, [newProduct.id, rawListingId]);
+  await run(`UPDATE raw_listings SET canonical_product_id = ?, match_status = 'confirmed' WHERE id = ?`, [newProduct.id, rawListingId]);
+
+  // Migrate supplier offers and price observations belonging to this raw listing
+  const store = getStore();
+  store.supplier_offers.forEach((o) => {
+    if (o.raw_listing_id === rawListingId) {
+      o.canonical_product_id = newProduct.id;
+    }
+  });
+
+  store.price_observations.forEach((p) => {
+    if (p.source_import_id === listing.supplier_import_id && p.supplier_id === listing.supplier_id && p.canonical_product_id === oldCanonicalId) {
+      p.canonical_product_id = newProduct.id;
+    }
+  });
+
+  await run(
+    `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, before, after) VALUES (?, ?, 'SPLIT_PRODUCT', 'canonical_product', ?, ?, ?)`,
+    [
+      `aud_${Date.now()}`,
+      userId,
+      newProduct.id,
+      JSON.stringify({ rawListingId, oldCanonicalId }),
+      JSON.stringify({ newCanonicalId: newProduct.id })
+    ]
+  );
+
   return newProduct;
 }
