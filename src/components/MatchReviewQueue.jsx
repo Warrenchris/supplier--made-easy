@@ -4,20 +4,22 @@ import {
   Tag, Info, AlertTriangle, CheckCircle2, RefreshCw, 
   ArrowRight, Layers, Sparkles
 } from 'lucide-react';
+import api from '../services/apiClient';
+import { useToast } from '../context/ToastContext';
 
 export default function MatchReviewQueue({ onUpdate }) {
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const toast = useToast();
 
   const fetchQueue = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/match-suggestions');
-      const data = await res.json();
+      const data = await api.get('/api/match-suggestions');
       setSuggestions(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Failed to fetch match queue:', err);
+      toast.error(err.message, 'Failed to Load Match Queue');
     } finally {
       setLoading(false);
     }
@@ -29,20 +31,23 @@ export default function MatchReviewQueue({ onUpdate }) {
 
   const handleApprove = async (id) => {
     try {
-      await fetch(`/api/match-suggestions/${id}/approve`, { method: 'POST' });
+      await api.post(`/api/match-suggestions/${id}/approve`);
       setSuggestions((prev) => prev.filter((s) => s.id !== id));
+      toast.success('Match approved. Product quote linked to catalog.');
       if (onUpdate) onUpdate();
     } catch (err) {
-      console.error(err);
+      toast.error(err.message, 'Approval Failed');
     }
   };
 
   const handleReject = async (id) => {
     try {
-      await fetch(`/api/match-suggestions/${id}/reject`, { method: 'POST' });
+      await api.post(`/api/match-suggestions/${id}/reject`);
       setSuggestions((prev) => prev.filter((s) => s.id !== id));
+      toast.info('Match rejected. Standalone canonical product created.');
+      if (onUpdate) onUpdate();
     } catch (err) {
-      console.error(err);
+      toast.error(err.message, 'Rejection Failed');
     }
   };
 

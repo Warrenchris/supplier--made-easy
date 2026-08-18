@@ -4,6 +4,8 @@ import {
   FileText, Check, Download, Layers, ShieldCheck, 
   Plus, History, Settings
 } from 'lucide-react';
+import api from '../services/apiClient';
+import { useToast } from '../context/ToastContext';
 
 export default function AdminSettings() {
   const [weights, setWeights] = useState({
@@ -20,22 +22,23 @@ export default function AdminSettings() {
   const [loading, setLoading] = useState(true);
   const [savedMsg, setSavedMsg] = useState('');
   const [newCurrency, setNewCurrency] = useState({ code: 'USD', rate: 129.50 });
+  const toast = useToast();
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const [resSettings, resFx, resPo] = await Promise.all([
-        fetch('/api/admin/settings').then((r) => r.json()),
-        fetch('/api/exchange-rates').then((r) => r.json()),
-        fetch('/api/purchase-orders/draft', { method: 'POST' }).then((r) => r.json())
+        api.get('/api/admin/settings'),
+        api.get('/api/exchange-rates'),
+        api.post('/api/purchase-orders/draft')
       ]);
 
-      if (resSettings.scoringWeights) setWeights(resSettings.scoringWeights);
-      if (resSettings.auditLogs) setAuditLogs(resSettings.auditLogs);
+      if (resSettings?.scoringWeights) setWeights(resSettings.scoringWeights);
+      if (resSettings?.auditLogs) setAuditLogs(resSettings.auditLogs);
       setFxRates(Array.isArray(resFx) ? resFx : []);
       setDraftPOs(Array.isArray(resPo) ? resPo : []);
     } catch (err) {
-      console.error('Failed to load admin settings:', err);
+      toast.error(err.message, 'Failed to Load Settings');
     } finally {
       setLoading(false);
     }
@@ -46,29 +49,31 @@ export default function AdminSettings() {
   }, []);
 
   const handleSaveWeights = async () => {
+    const totalWeight = Object.values(weights).reduce((a, b) => a + Number(b), 0);
+    if (Math.abs(totalWeight - 1.0) > 0.02) {
+      toast.warning(
+        `Formula weights currently sum to ${Math.round(totalWeight * 100)}%. For balanced scoring, ensure weights sum to 100%.`,
+        'Unbalanced Formula Weights'
+      );
+    }
+
     try {
-      await fetch('/api/admin/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scoringWeights: weights })
-      });
+      await api.post('/api/admin/settings', { scoringWeights: weights });
       setSavedMsg('Scoring formula weights updated successfully.');
+      toast.success('Supplier scoring weights successfully saved.', 'Formula Weights Updated');
       setTimeout(() => setSavedMsg(''), 3000);
     } catch (err) {
-      console.error(err);
+      toast.error(err.message, 'Failed to Save Settings');
     }
   };
 
   const handleUpdateFx = async (currency_code, rate_to_base) => {
     try {
-      await fetch('/api/exchange-rates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currency_code, rate_to_base })
-      });
+      await api.post('/api/exchange-rates', { currency_code, rate_to_base });
+      toast.success(`Exchange rate for ${currency_code} updated to ${rate_to_base} KES.`, 'Exchange Rate Saved');
       fetchData();
     } catch (err) {
-      console.error(err);
+      toast.error(err.message, 'Failed to Update Exchange Rate');
     }
   };
 

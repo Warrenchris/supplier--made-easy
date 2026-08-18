@@ -5,6 +5,8 @@ import {
   Sparkles, Layers, CheckCircle2, ArrowRight, RefreshCw, 
   FileText, ShieldCheck, Eye, HelpCircle, ArrowUpRight
 } from "lucide-react";
+import api from "../services/apiClient";
+import { useToast } from "../context/ToastContext";
 
 const NAME_KEYS = ["product", "name", "description", "item", "title", "model name", "product name", "details", "desc"];
 const SKU_KEYS = ["sku", "code", "part", "model", "mpn", "id", "ean", "upc", "part number", "item code", "p/n"];
@@ -173,10 +175,13 @@ export default function ImportHub({ onImportSuccess, onNavigateQueue }) {
     }));
   };
 
+  const toast = useToast();
+
   const confirmPending = async (pf) => {
-    if (!pf.mapping || !pf.mapping.name || !pf.mapping.price) return;
-    setImporting(true);
-    setSuccessReport(null);
+    if (!pf.mapping || !pf.mapping.name || !pf.mapping.price) {
+      toast.error("Please map both the Product Name and Price columns before publishing.", "Mapping Incomplete");
+      return;
+    }
 
     const items = [];
     let skippedCount = 0;
@@ -199,17 +204,23 @@ export default function ImportHub({ onImportSuccess, onNavigateQueue }) {
       items.push({ name, sku, price, stockRaw });
     });
 
+    if (items.length === 0) {
+      toast.error(
+        `0 valid items detected out of ${pf.dataRows.length} rows. Please verify your selected Header Row and Column Mappings.`,
+        "Zero Products Ingested"
+      );
+      return;
+    }
+
+    setImporting(true);
+    setSuccessReport(null);
+
     try {
-      const res = await fetch('/api/imports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          supplier_name: pf.supplierName,
-          currency: pf.currency,
-          items
-        })
+      const data = await api.post('/api/imports', {
+        supplier_name: pf.supplierName,
+        currency: pf.currency,
+        items
       });
-      const data = await res.json();
       
       setPendingFiles((prev) => prev.filter((p) => p.id !== pf.id));
       setSuccessReport({
@@ -221,9 +232,22 @@ export default function ImportHub({ onImportSuccess, onNavigateQueue }) {
         createdNewCount: data.createdNewCount || 0
       });
 
+      if (skippedCount > 0) {
+        const skipRate = Math.round((skippedCount / pf.dataRows.length) * 100);
+        toast.warning(
+          `Imported ${items.length} products from ${pf.supplierName}. ${skippedCount} rows (${skipRate}%) were skipped due to missing/unparseable prices.`,
+          "Pricelist Ingested with Warnings"
+        );
+      } else {
+        toast.success(
+          `Imported all ${items.length} products from ${pf.supplierName} (${data.autoConfirmedCount || 0} catalog matches, ${data.reviewQueueCount || 0} for review).`,
+          "Pricelist Ingested Successfully"
+        );
+      }
+
       if (onImportSuccess) onImportSuccess();
     } catch (err) {
-      console.error('Import failed:', err);
+      toast.error(err.message, 'Pricelist Ingestion Failed');
     } finally {
       setImporting(false);
     }
