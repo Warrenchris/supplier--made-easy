@@ -655,6 +655,8 @@ export async function processListing(rawListingId) {
       source: 'excel_import'
     });
   }
+
+  return { action: resolution.action, confidence: resolution.confidence, canonicalProduct: resolution.canonicalProduct };
 }
 
 function parseStockQty(stockText) {

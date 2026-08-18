@@ -511,6 +511,10 @@ router.post('/imports', requireRole(['buyer', 'admin']), async (req, res) => {
       [importId, supplier.id, items.length]);
 
     const createdListingIds = [];
+    let autoConfirmedCount = 0;
+    let reviewQueueCount = 0;
+    let createdNewCount = 0;
+
     for (const item of items) {
       const rlId = `rl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       await run(
@@ -525,15 +529,25 @@ router.post('/imports', requireRole(['buyer', 'admin']), async (req, res) => {
       createdListingIds.push(rlId);
 
       // Process through Product Identity Engine
-      await processListing(rlId);
+      const resMeta = await processListing(rlId);
+      if (resMeta?.action === 'auto_confirm') autoConfirmedCount++;
+      else if (resMeta?.action === 'review_queue') reviewQueueCount++;
+      else createdNewCount++;
     }
 
     await run(
       `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'INGEST_PRICELIST', 'supplier_import', ?, ?)`,
-      [`aud_${Date.now()}`, req.user.id, importId, JSON.stringify({ supplier: supplier_name, count: items.length })]
+      [`aud_${Date.now()}`, req.user.id, importId, JSON.stringify({ supplier: supplier_name, count: items.length, autoConfirmedCount, reviewQueueCount, createdNewCount })]
     );
 
-    res.json({ success: true, importId, count: createdListingIds.length });
+    res.json({
+      success: true,
+      importId,
+      count: createdListingIds.length,
+      autoConfirmedCount,
+      reviewQueueCount,
+      createdNewCount
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

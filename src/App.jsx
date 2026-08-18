@@ -502,6 +502,7 @@ export default function App() {
           {activeTab === 'import' && (
             <ImportHub 
               onImportSuccess={() => setActiveTab('products')}
+              onNavigateQueue={() => setActiveTab('review')}
             />
           )}
 
