@@ -68,27 +68,32 @@ router.get('/canonical-products', async (req, res) => {
 
     for (const p of products) {
       const offers = await offerRepo.findByProduct(p.id);
+      const listings = await query(
+        `SELECT r.*, s.name as supplier_name, s.currency_default, s.reliability_score, s.avg_delivery_days, s.warranty_terms_default
+         FROM raw_listings r
+         JOIN suppliers s ON r.supplier_id = s.id
+         WHERE r.canonical_product_id = ?`,
+        [p.id]
+      );
 
-      let enrichedOffers = offers;
-      if (!offers.length) {
-        const listings = await query(
-          `SELECT r.*, s.name as supplier_name, s.currency_default, s.reliability_score, s.avg_delivery_days, s.warranty_terms_default
-           FROM raw_listings r
-           JOIN suppliers s ON r.supplier_id = s.id
-           WHERE r.canonical_product_id = ?`,
-          [p.id]
-        );
-        enrichedOffers = listings.map((l) => {
+      const offerMap = new Map();
+      offers.forEach((o) => {
+        const sup = o.supplier || suppliers.find((s) => s.id === o.supplier_id) || {};
+        offerMap.set(o.supplier_id + '_' + (o.raw_listing_id || ''), { ...o, supplier: sup });
+      });
+
+      listings.forEach((l) => {
+        const key = l.supplier_id + '_' + l.id;
+        if (!offerMap.has(key)) {
           const curr = (l.parsed_currency || 'KES').toUpperCase();
           const rate = curr === 'KES' ? 1.0 : (rates[curr] !== undefined ? rates[curr] : (rates['USD'] || 1.0));
           const supplier = suppliers.find((s) => s.id === l.supplier_id) || {};
-          return {
+          offerMap.set(key, {
             id: `off_${l.id}`,
             canonical_product_id: p.id,
             supplier_id: l.supplier_id,
             supplier_name: l.supplier_name,
             raw_listing_id: l.id,
-            supplier_name: l.raw_name,
             supplier_sku: l.raw_sku,
             cost: l.parsed_price,
             currency: l.parsed_currency,
@@ -97,9 +102,11 @@ router.get('/canonical-products', async (req, res) => {
             stock_status: l.parsed_stock_status,
             warranty_terms: supplier.warranty_terms_default || '',
             supplier
-          };
-        });
-      }
+          });
+        }
+      });
+
+      const enrichedOffers = Array.from(offerMap.values());
 
       // Calculate intelligence scores for each offer
       let recommendedOffer = null;
@@ -178,15 +185,91 @@ router.post('/match-suggestions/:id/approve', requireRole(['buyer', 'admin']), a
     if (!sug) return res.status(404).json({ error: 'Match suggestion not found' });
 
     let cpId = sug.canonical_product_id;
+    const listingA = await get(`SELECT * FROM raw_listings WHERE id = ?`, [sug.raw_listing_a_id]);
+    if (!listingA) return res.status(404).json({ error: 'Raw listing not found' });
+
     if (!cpId) {
-      const listingA = await get(`SELECT * FROM raw_listings WHERE id = ?`, [sug.raw_listing_a_id]);
-      const newProduct = await productRepo.create({ canonical_name: listingA.raw_name });
+      const newProduct = await productRepo.create({
+        canonical_name: listingA.raw_name,
+        brand: listingA.brand || 'Generic',
+        category: listingA.category || 'Electronics',
+        model_number: listingA.raw_sku || '',
+        match_confidence: 1.0
+      });
       cpId = newProduct.id;
     }
 
-    await run(`UPDATE raw_listings SET canonical_product_id = ?, match_status = 'confirmed' WHERE id = ?`, [cpId, sug.raw_listing_a_id]);
+    const rates = await getExchangeRates();
+
+    // Confirm listingA and create its offer + price observation
+    await run(`UPDATE raw_listings SET canonical_product_id = ?, match_status = 'confirmed' WHERE id = ?`, [cpId, listingA.id]);
+    const rateA = rates[listingA.parsed_currency] || rates['USD'] || 1.0;
+    const priceInBaseA = listingA.parsed_price * rateA;
+    const supplierA = await get(`SELECT * FROM suppliers WHERE id = ?`, [listingA.supplier_id]);
+
+    await offerRepo.upsert({
+      canonical_product_id: cpId,
+      supplier_id: listingA.supplier_id,
+      raw_listing_id: listingA.id,
+      supplier_sku: listingA.raw_sku,
+      supplier_name: listingA.raw_name,
+      cost: listingA.parsed_price,
+      currency: listingA.parsed_currency,
+      cost_in_base_currency: priceInBaseA,
+      quantity_available: listingA.parsed_stock_qty || 0,
+      stock_status: listingA.parsed_stock_status,
+      warranty_terms: supplierA?.warranty_terms_default || '',
+      source_import_id: listingA.supplier_import_id
+    });
+
+    await priceObservationRepo.record({
+      supplier_id: listingA.supplier_id,
+      canonical_product_id: cpId,
+      price: listingA.parsed_price,
+      currency: listingA.parsed_currency,
+      price_in_base_currency: priceInBaseA,
+      stock_quantity: listingA.parsed_stock_qty || 0,
+      stock_status: listingA.parsed_stock_status,
+      source_import_id: listingA.supplier_import_id,
+      source: 'excel_import'
+    });
+
+    // If listingB exists, confirm and sync its offer too
     if (sug.raw_listing_b_id) {
-      await run(`UPDATE raw_listings SET canonical_product_id = ?, match_status = 'confirmed' WHERE id = ?`, [cpId, sug.raw_listing_b_id]);
+      const listingB = await get(`SELECT * FROM raw_listings WHERE id = ?`, [sug.raw_listing_b_id]);
+      if (listingB) {
+        await run(`UPDATE raw_listings SET canonical_product_id = ?, match_status = 'confirmed' WHERE id = ?`, [cpId, listingB.id]);
+        const rateB = rates[listingB.parsed_currency] || rates['USD'] || 1.0;
+        const priceInBaseB = listingB.parsed_price * rateB;
+        const supplierB = await get(`SELECT * FROM suppliers WHERE id = ?`, [listingB.supplier_id]);
+
+        await offerRepo.upsert({
+          canonical_product_id: cpId,
+          supplier_id: listingB.supplier_id,
+          raw_listing_id: listingB.id,
+          supplier_sku: listingB.raw_sku,
+          supplier_name: listingB.raw_name,
+          cost: listingB.parsed_price,
+          currency: listingB.parsed_currency,
+          cost_in_base_currency: priceInBaseB,
+          quantity_available: listingB.parsed_stock_qty || 0,
+          stock_status: listingB.parsed_stock_status,
+          warranty_terms: supplierB?.warranty_terms_default || '',
+          source_import_id: listingB.supplier_import_id
+        });
+
+        await priceObservationRepo.record({
+          supplier_id: listingB.supplier_id,
+          canonical_product_id: cpId,
+          price: listingB.parsed_price,
+          currency: listingB.parsed_currency,
+          price_in_base_currency: priceInBaseB,
+          stock_quantity: listingB.parsed_stock_qty || 0,
+          stock_status: listingB.parsed_stock_status,
+          source_import_id: listingB.supplier_import_id,
+          source: 'excel_import'
+        });
+      }
     }
 
     await run(`UPDATE match_suggestions SET status = 'approved', reviewed_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
@@ -204,6 +287,55 @@ router.post('/match-suggestions/:id/approve', requireRole(['buyer', 'admin']), a
 router.post('/match-suggestions/:id/reject', requireRole(['buyer', 'admin']), async (req, res) => {
   try {
     const { id } = req.params;
+    const sug = await get(`SELECT * FROM match_suggestions WHERE id = ?`, [id]);
+    if (!sug) return res.status(404).json({ error: 'Match suggestion not found' });
+
+    const listingA = await get(`SELECT * FROM raw_listings WHERE id = ?`, [sug.raw_listing_a_id]);
+    if (listingA) {
+      // Create new standalone canonical product for listingA so it's not discarded
+      const newProduct = await productRepo.create({
+        canonical_name: listingA.raw_name,
+        brand: listingA.brand || 'Generic',
+        category: listingA.category || 'Electronics',
+        model_number: listingA.raw_sku || '',
+        match_confidence: 1.0
+      });
+
+      await run(`UPDATE raw_listings SET canonical_product_id = ?, match_confidence = 1.0, match_status = 'confirmed' WHERE id = ?`, [newProduct.id, listingA.id]);
+
+      const rates = await getExchangeRates();
+      const rate = rates[listingA.parsed_currency] || rates['USD'] || 1.0;
+      const priceInBase = listingA.parsed_price * rate;
+      const supplier = await get(`SELECT * FROM suppliers WHERE id = ?`, [listingA.supplier_id]);
+
+      await offerRepo.upsert({
+        canonical_product_id: newProduct.id,
+        supplier_id: listingA.supplier_id,
+        raw_listing_id: listingA.id,
+        supplier_sku: listingA.raw_sku,
+        supplier_name: listingA.raw_name,
+        cost: listingA.parsed_price,
+        currency: listingA.parsed_currency,
+        cost_in_base_currency: priceInBase,
+        quantity_available: listingA.parsed_stock_qty || 0,
+        stock_status: listingA.parsed_stock_status,
+        warranty_terms: supplier?.warranty_terms_default || '',
+        source_import_id: listingA.supplier_import_id
+      });
+
+      await priceObservationRepo.record({
+        supplier_id: listingA.supplier_id,
+        canonical_product_id: newProduct.id,
+        price: listingA.parsed_price,
+        currency: listingA.parsed_currency,
+        price_in_base_currency: priceInBase,
+        stock_quantity: listingA.parsed_stock_qty || 0,
+        stock_status: listingA.parsed_stock_status,
+        source_import_id: listingA.supplier_import_id,
+        source: 'excel_import'
+      });
+    }
+
     await run(`UPDATE match_suggestions SET status = 'rejected', reviewed_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
     await run(
       `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, after) VALUES (?, ?, 'REJECT_MATCH', 'match_suggestion', ?, '{}')`,
