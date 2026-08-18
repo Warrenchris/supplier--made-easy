@@ -4,6 +4,8 @@ import {
   Eye, EyeOff, Settings, CheckCircle2, ShieldCheck, 
   ArrowRight, Layers, Tag
 } from 'lucide-react';
+import api from '../services/apiClient';
+import { useToast } from '../context/ToastContext';
 
 const STRATEGIES = [
   { key: 'markup', label: 'Markup', formula: 'Cost × (1 + rate)', icon: Percent },
@@ -19,6 +21,7 @@ export default function StorefrontSync() {
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('admin'); // 'admin' or 'public'
   const [savedMsg, setSavedMsg] = useState('');
+  const toast = useToast();
 
   useEffect(() => { 
     fetchData(); 
@@ -28,15 +31,15 @@ export default function StorefrontSync() {
     setLoading(true);
     try {
       const [ecoRes, pubRes, settingsRes] = await Promise.all([
-        fetch('/api/internal/storefront-economics').then((r) => r.json()),
-        fetch('/api/storefront/products').then((r) => r.json()),
-        fetch('/api/admin/settings').then((r) => r.json())
+        api.get('/api/internal/storefront-economics'),
+        api.get('/api/storefront/products'),
+        api.get('/api/admin/settings')
       ]);
       setEconomics(Array.isArray(ecoRes) ? ecoRes : []);
       setPublicFeed(Array.isArray(pubRes) ? pubRes : []);
-      if (settingsRes.storefrontSettings) setSettings(settingsRes.storefrontSettings);
+      if (settingsRes?.storefrontSettings) setSettings(settingsRes.storefrontSettings);
     } catch (err) {
-      console.error('Failed to load storefront sync telemetry:', err);
+      toast.error(err.message, 'Failed to Load Storefront Data');
     } finally {
       setLoading(false);
     }
@@ -46,16 +49,13 @@ export default function StorefrontSync() {
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);
     try {
-      await fetch('/api/storefront/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSettings)
-      });
+      await api.post('/api/storefront/settings', newSettings);
       setSavedMsg('Storefront pricing policy updated.');
+      toast.success('Storefront commercial pricing policy saved.', 'Storefront Policy Updated');
       setTimeout(() => setSavedMsg(''), 3000);
       fetchData();
     } catch (err) {
-      console.error(err);
+      toast.error(err.message, 'Failed to Update Pricing Policy');
     }
   };
 
