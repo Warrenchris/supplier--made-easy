@@ -8,12 +8,14 @@ import AdminSettings from './components/AdminSettings';
 import ProcurementOptimizer from './components/ProcurementOptimizer';
 import PriceTrendTracker from './components/PriceTrendTracker';
 import StorefrontSync from './components/StorefrontSync';
+import CommandPalette from './components/CommandPalette';
+import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
 import { 
   Package, Layers, GitMerge, Upload, Store, 
   Sliders, Target, TrendingUp, ShoppingCart, 
   Search, Bell, User, ChevronRight, FileText, 
   Download, CheckCircle2, AlertTriangle, ShieldCheck, 
-  ExternalLink, Sparkles, Building2, HelpCircle
+  ExternalLink, Sparkles, Building2, HelpCircle, Keyboard
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -22,21 +24,25 @@ export default function App() {
   const [optimizerProduct, setOptimizerProduct] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [pendingReviewsCount, setPendingReviewsCount] = useState(0);
+  const [productsList, setProductsList] = useState([]);
   const [draftPOs, setDraftPOs] = useState([]);
-  const [loadingPOs, setLoadingPOs] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const searchInputRef = useRef(null);
 
-  // Fetch background notifications & review counts
+  // Fetch background notifications, product catalog for palette, & review counts
   useEffect(() => {
     const fetchTelemetry = async () => {
       try {
-        const [matchRes, poRes] = await Promise.all([
+        const [matchRes, poRes, prodRes] = await Promise.all([
           fetch('/api/match-suggestions').then((r) => r.json()),
-          fetch('/api/purchase-orders/draft', { method: 'POST' }).then((r) => r.json())
+          fetch('/api/purchase-orders/draft', { method: 'POST' }).then((r) => r.json()),
+          fetch('/api/canonical-products').then((r) => r.json())
         ]);
         if (Array.isArray(matchRes)) setPendingReviewsCount(matchRes.length);
         if (Array.isArray(poRes)) setDraftPOs(poRes);
+        if (Array.isArray(prodRes)) setProductsList(prodRes);
       } catch (err) {
         console.error('Telemetry fetch error:', err);
       }
@@ -47,14 +53,46 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Global Keyboard Shortcut: '/' to focus search
+  // Global Keyboard Shortcuts (⌘K, /, P, O, S, T, Q, I, ?)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === '/' && document.activeElement !== searchInputRef.current && document.activeElement.tagName !== 'INPUT') {
+      const isInputActive = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+
+      // ⌘K or Ctrl+K -> Command Palette
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+        return;
+      }
+
+      // If typing in input, ignore single-letter navigation shortcuts
+      if (isInputActive) {
+        if (e.key === 'Escape') {
+          document.activeElement.blur();
+        }
+        return;
+      }
+
+      if (e.key === '/') {
         e.preventDefault();
         searchInputRef.current?.focus();
+      } else if (e.key === 'p' || e.key === 'P') {
+        setActiveTab('products');
+      } else if (e.key === 'o' || e.key === 'O') {
+        setActiveTab('optimizer');
+      } else if (e.key === 's' || e.key === 'S') {
+        setActiveTab('suppliers');
+      } else if (e.key === 't' || e.key === 'T') {
+        setActiveTab('trends');
+      } else if (e.key === 'q' || e.key === 'Q') {
+        setActiveTab('queue');
+      } else if (e.key === 'i' || e.key === 'I') {
+        setActiveTab('import');
+      } else if (e.key === '?') {
+        setShowShortcutsModal(true);
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
@@ -141,23 +179,27 @@ export default function App() {
           </div>
         </div>
 
-        {/* Global Command Search */}
-        <div style={{ position: 'relative', width: '380px', maxWidth: '40vw' }}>
+        {/* Global Command Search / Palette Trigger */}
+        <div 
+          onClick={() => setShowCommandPalette(true)}
+          style={{ position: 'relative', width: '380px', maxWidth: '40vw', cursor: 'pointer' }}
+        >
           <Search size={13} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
           <input
             ref={searchInputRef}
+            readOnly
             value={globalSearch}
-            onChange={(e) => setGlobalSearch(e.target.value)}
-            placeholder="Search products, suppliers, SKUs... (Press /)"
+            placeholder="Search catalog or press ⌘K for command palette..."
             style={{ 
               width: '100%', 
               paddingLeft: '30px', 
-              paddingRight: '32px',
+              paddingRight: '60px',
               paddingTop: '6px',
               paddingBottom: '6px',
               fontSize: '12px',
               height: '32px',
-              backgroundColor: 'var(--bg-primary)'
+              backgroundColor: 'var(--bg-primary)',
+              cursor: 'pointer'
             }}
           />
           <span 
@@ -171,16 +213,16 @@ export default function App() {
               fontFamily: 'var(--font-mono)',
               border: '1px solid var(--border-subtle)',
               borderRadius: '3px',
-              padding: '1px 4px',
+              padding: '1px 5px',
               background: 'var(--bg-elevated)'
             }}
           >
-            /
+            ⌘K
           </span>
         </div>
 
         {/* Quick Actions & User Telemetry */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           
           {/* Base Currency Badge */}
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', padding: '4px 8px', borderRadius: 'var(--radius-xs)', fontFamily: 'var(--font-mono)' }}>
@@ -194,6 +236,16 @@ export default function App() {
             style={{ fontSize: '12px', padding: '5px 10px', height: '30px' }}
           >
             <Upload size={13} /> + Import Price List
+          </button>
+
+          {/* Keyboard Shortcuts Guide Trigger */}
+          <button
+            onClick={() => setShowShortcutsModal(true)}
+            className="btn-ghost"
+            style={{ padding: '6px' }}
+            title="Keyboard Shortcuts (?)"
+          >
+            <Keyboard size={15} />
           </button>
 
           {/* Notifications Trigger */}
@@ -402,8 +454,8 @@ export default function App() {
 
           {/* System Footer Note */}
           <div style={{ padding: '8px', borderTop: '1px solid var(--border-subtle)', fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
-            <div>SME Engine v3.1</div>
-            <div>Zero AI Hallucination</div>
+            <div>Press <strong>?</strong> for shortcuts</div>
+            <div style={{ marginTop: '2px' }}>SME Engine v3.1</div>
           </div>
         </aside>
 
@@ -544,6 +596,20 @@ export default function App() {
 
       </div>
 
+      {/* ─── Command Palette Modal (⌘K) ─── */}
+      <CommandPalette 
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        onNavigate={handleNavigate}
+        products={productsList}
+      />
+
+      {/* ─── Keyboard Shortcuts Modal (?) ─── */}
+      <KeyboardShortcutsModal
+        isOpen={showShortcutsModal}
+        onClose={() => setShowShortcutsModal(false)}
+      />
+
       {/* ─── Operational Alerts Modal ─── */}
       {showAlertModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', padding: '60px 24px' }}>
@@ -578,7 +644,7 @@ export default function App() {
           <strong style={{ color: 'var(--text-secondary)' }}>Supplier Made Easy</strong> · Enterprise Procurement Intelligence Operating System
         </div>
         <div style={{ fontFamily: 'var(--font-mono)' }}>
-          Base: KES · 6-Metric Scoring · Realmer Syndicated
+          Base: KES · 6-Metric Scoring · Press <strong>⌘K</strong> for Command Center
         </div>
       </footer>
 

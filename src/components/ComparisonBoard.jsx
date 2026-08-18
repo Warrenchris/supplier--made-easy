@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { 
   Search, ChevronDown, ChevronRight, Download, 
   Layers, Target, Eye, Filter, ArrowUpDown, 
-  CheckCircle2, AlertCircle, RefreshCw, Sparkles, ExternalLink
+  CheckCircle2, AlertCircle, RefreshCw, Sparkles, 
+  ExternalLink, X, DollarSign, Award, Clock, Scissors,
+  Building2, TrendingDown, TrendingUp
 } from 'lucide-react';
-import ProductDetailModal from './ProductDetailModal';
 import * as XLSX from 'xlsx';
 
 export default function ComparisonBoard({ onOptimizeProduct }) {
@@ -17,6 +18,7 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
   const [sortAsc, setSortAsc] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [targetSellPrice, setTargetSellPrice] = useState(0);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -36,6 +38,14 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
   }, []);
 
   const toggleExpand = (id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  // When a product is selected for the right-side inspector, initialize margin calculator price
+  const handleOpenInspector = (prod) => {
+    setSelectedProduct(prod);
+    const rec = prod.recommendedOffer;
+    const baseCost = rec ? (rec.cost_in_base_currency || rec.price_in_base_currency || 0) : 0;
+    setTargetSellPrice(baseCost > 0 ? Math.round(baseCost * 1.30) : 0);
+  };
 
   // Extract unique categories
   const categories = useMemo(() => {
@@ -95,6 +105,22 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
     }
   };
 
+  const handleSplitItem = async (rawListingId) => {
+    if (confirm('Split this raw listing out into its own standalone canonical product?')) {
+      try {
+        await fetch('/api/products/split', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rawListingId })
+        });
+        fetchProducts();
+        setSelectedProduct(null);
+      } catch (err) {
+        console.error('Failed to split product:', err);
+      }
+    }
+  };
+
   const exportExcel = () => {
     const rows = [];
     products.forEach((p) => {
@@ -132,29 +158,35 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
     );
   }
 
+  // Selected product calculations for the inspector
+  const rec = selectedProduct?.recommendedOffer;
+  const inspectorCost = rec ? (rec.cost_in_base_currency || rec.price_in_base_currency || 0) : 0;
+  const grossProfit = targetSellPrice - inspectorCost;
+  const grossMarginPct = targetSellPrice > 0 ? ((grossProfit / targetSellPrice) * 100) : 0;
+
   return (
     <div className="animate-fade" style={{ maxWidth: '1280px', margin: '0 auto' }}>
       
       {/* ─── Header & Action Bar ─── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>
             Multi-Supplier Sourcing
           </div>
           <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-            Procurement Comparison Matrix
+            Products & Comparison Matrix
           </h1>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-            Unified canonical product catalog with automated price normalization and supplier intelligence scoring.
+            Unified catalog of {products.length} canonical products with side-by-side vendor quotes and immediate optimization triggers.
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
           <button onClick={fetchProducts} className="btn-secondary" style={{ fontSize: '12px' }}>
-            <RefreshCw size={14} /> Refresh
+            <RefreshCw size={13} /> Refresh
           </button>
           <button onClick={exportExcel} className="btn-secondary" style={{ fontSize: '12px' }}>
-            <Download size={14} /> Export Matrix (.xlsx)
+            <Download size={13} /> Export Matrix (.xlsx)
           </button>
         </div>
       </div>
@@ -212,16 +244,16 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
             <tr>
               <th style={{ width: '32px', textAlign: 'center' }}></th>
               <th onClick={() => handleSort('name')} style={{ cursor: 'pointer' }}>
-                Canonical Product <ArrowUpDown size={11} style={{ display: 'inline', verticalAlign: 'middle' }} />
-              </th>
-              <th>Category</th>
-              <th onClick={() => handleSort('score')} style={{ cursor: 'pointer' }}>
-                Recommended Supplier <ArrowUpDown size={11} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                Product <ArrowUpDown size={11} style={{ display: 'inline', verticalAlign: 'middle' }} />
               </th>
               <th onClick={() => handleSort('price')} style={{ cursor: 'pointer', textAlign: 'right' }}>
-                Best Price (KES) <ArrowUpDown size={11} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                Best Acquisition (KES) <ArrowUpDown size={11} style={{ display: 'inline', verticalAlign: 'middle' }} />
               </th>
-              <th style={{ textAlign: 'center' }}>Offers</th>
+              <th style={{ textAlign: 'center' }}>Stock</th>
+              <th onClick={() => handleSort('offers')} style={{ cursor: 'pointer', textAlign: 'center' }}>
+                Suppliers <ArrowUpDown size={11} style={{ display: 'inline', verticalAlign: 'middle' }} />
+              </th>
+              <th style={{ textAlign: 'right' }}>Spread Saving</th>
               <th style={{ textAlign: 'right' }}>Action</th>
             </tr>
           </thead>
@@ -235,16 +267,27 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
             ) : (
               filteredSorted.map((p) => {
                 const isOpen = !!expanded[p.id];
-                const rec = p.recommendedOffer;
+                const recOffer = p.recommendedOffer;
                 const offers = p.offers || [];
                 const totalStock = offers.reduce((sum, o) => sum + (o.quantity_available || o.stock_qty || 0), 0);
 
+                // Calculate spread saving if multiple suppliers exist
+                let spreadSaving = 0;
+                if (offers.length >= 2) {
+                  const sortedCosts = offers.map((o) => o.cost_in_base_currency || o.price_in_base_currency || 0).sort((a, b) => a - b);
+                  spreadSaving = sortedCosts[sortedCosts.length - 1] - sortedCosts[0];
+                }
+
                 return (
                   <>
-                    <tr key={p.id} className={isOpen ? 'active' : ''}>
-                      <td style={{ textAlign: 'center' }}>
+                    <tr 
+                      key={p.id} 
+                      className={isOpen ? 'active' : ''}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => handleOpenInspector(p)}
+                    >
+                      <td style={{ textAlign: 'center' }} onClick={(e) => { e.stopPropagation(); toggleExpand(p.id); }}>
                         <button
-                          onClick={() => toggleExpand(p.id)}
                           className="btn-ghost"
                           style={{ padding: '2px 4px' }}
                         >
@@ -257,38 +300,18 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
                           {p.canonical_name}
                         </div>
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                          {p.model_number ? `Model: ${p.model_number}` : (p.brand || 'Generic')}
+                          {p.model_number ? `Model: ${p.model_number}` : (p.brand || 'Generic')} · <span style={{ color: 'var(--text-secondary)' }}>{p.category || 'Electronics'}</span>
                         </div>
                       </td>
 
-                      <td>
-                        <span className="badge badge-neutral">{p.category || 'Electronics'}</span>
-                      </td>
-
-                      <td>
-                        {rec ? (
-                          <div>
-                            <div style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>
-                              {rec.supplier_name}
-                            </div>
-                            <div style={{ fontSize: '11px', color: 'var(--forest-bright)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <span>Score: {rec.scoreInfo?.totalScore || 'N/A'}/100</span>
-                              {rec.scoreInfo?.totalScore >= 85 && <span className="badge badge-forest" style={{ padding: '0 4px', fontSize: '9px' }}>Preferred</span>}
-                            </div>
-                          </div>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)' }}>No active offers</span>
-                        )}
-                      </td>
-
                       <td style={{ textAlign: 'right' }}>
-                        {rec ? (
+                        {recOffer ? (
                           <div>
                             <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: '14px' }}>
-                              KSh {Math.round(rec.cost_in_base_currency || rec.price_in_base_currency || 0).toLocaleString()}
+                              KSh {Math.round(recOffer.cost_in_base_currency || recOffer.price_in_base_currency || 0).toLocaleString()}
                             </div>
-                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                              {rec.cost || rec.price} {rec.currency}
+                            <div style={{ fontSize: '10px', color: 'var(--forest-bright)' }}>
+                              via {recOffer.supplier_name}
                             </div>
                           </div>
                         ) : (
@@ -297,12 +320,28 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
                       </td>
 
                       <td style={{ textAlign: 'center' }}>
+                        <span className={`badge ${totalStock > 0 ? 'badge-success' : 'badge-danger'}`}>
+                          {totalStock} units
+                        </span>
+                      </td>
+
+                      <td style={{ textAlign: 'center' }}>
                         <span className={`badge ${offers.length > 1 ? 'badge-forest' : 'badge-neutral'}`}>
-                          {offers.length} {offers.length === 1 ? 'offer' : 'offers'}
+                          {offers.length} {offers.length === 1 ? 'vendor' : 'vendors'}
                         </span>
                       </td>
 
                       <td style={{ textAlign: 'right' }}>
+                        {spreadSaving > 0 ? (
+                          <span className="badge badge-recommendation font-mono">
+                            KSh {Math.round(spreadSaving).toLocaleString()}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
+                      </td>
+
+                      <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'inline-flex', gap: '4px' }}>
                           <button
                             onClick={() => {
@@ -310,15 +349,15 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
                             }}
                             className="btn-primary"
                             style={{ padding: '4px 8px', fontSize: '11px' }}
-                            title="Optimize supplier allocation for this product"
+                            title="Optimize supplier allocation"
                           >
                             <Target size={12} /> Optimize
                           </button>
                           <button
-                            onClick={() => setSelectedProduct(p)}
+                            onClick={() => handleOpenInspector(p)}
                             className="btn-secondary"
                             style={{ padding: '4px 8px', fontSize: '11px' }}
-                            title="Inspect product specification & supplier matrix"
+                            title="Open Right-Side Product Inspector"
                           >
                             <Eye size={12} />
                           </button>
@@ -326,12 +365,12 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
                       </td>
                     </tr>
 
-                    {/* ─── Expandable Sub-row: Full Supplier Offers Matrix ─── */}
+                    {/* ─── Expandable Inline Quote Matrix ─── */}
                     {isOpen && (
                       <tr key={`${p.id}_expanded`} style={{ backgroundColor: 'var(--bg-primary)' }}>
                         <td colSpan={7} style={{ padding: '12px 20px' }}>
                           <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
-                            Supplier Offer Comparison Matrix ({offers.length} quotes)
+                            Supplier Offer Comparison ({offers.length} quotes)
                           </div>
 
                           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
@@ -349,9 +388,9 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
                               </thead>
                               <tbody>
                                 {offers.map((off) => {
-                                  const isRec = rec && rec.id === off.id;
+                                  const isRec = recOffer && recOffer.id === off.id;
                                   const baseCost = Math.round(off.cost_in_base_currency || off.price_in_base_currency || 0);
-                                  const bestCost = rec ? Math.round(rec.cost_in_base_currency || rec.price_in_base_currency || 0) : baseCost;
+                                  const bestCost = recOffer ? Math.round(recOffer.cost_in_base_currency || recOffer.price_in_base_currency || 0) : baseCost;
                                   const spread = baseCost - bestCost;
 
                                   return (
@@ -408,13 +447,147 @@ export default function ComparisonBoard({ onOptimizeProduct }) {
         </table>
       </div>
 
-      {/* ─── Product Detail Inspector Slide-over / Modal ─── */}
+      {/* ─── Signature Right-Side Product Inspector Drawer ─── */}
       {selectedProduct && (
-        <ProductDetailModal
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-          onUpdate={fetchProducts}
-        />
+        <div className="drawer-backdrop" onClick={() => setSelectedProduct(null)}>
+          <div className="drawer-content" onClick={(e) => e.stopPropagation()}>
+            
+            {/* Drawer Header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--bg-elevated)' }}>
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Product Inspector
+                </div>
+                <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', margin: '2px 0 0 0' }}>
+                  {selectedProduct.canonical_name}
+                </h3>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {selectedProduct.brand || 'Generic'} · {selectedProduct.category || 'Electronics'}
+                </div>
+              </div>
+
+              <button onClick={() => setSelectedProduct(null)} className="btn-ghost" style={{ padding: '4px' }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Drawer Body */}
+            <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              {/* Best Acquisition Highlight */}
+              {rec && (
+                <div className="panel" style={{ padding: '16px', backgroundColor: 'var(--forest-light)', borderColor: 'var(--forest-border)' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--forest-bright)', textTransform: 'uppercase' }}>
+                    Best Acquisition Cost
+                  </div>
+                  <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                    KSh {Math.round(inspectorCost).toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    Supplier: <strong>{rec.supplier_name}</strong> · Score: <strong>{rec.scoreInfo?.totalScore || 'N/A'}/100</strong>
+                  </div>
+                </div>
+              )}
+
+              {/* Direct Optimize CTA */}
+              <button
+                onClick={() => {
+                  const target = selectedProduct;
+                  setSelectedProduct(null);
+                  if (onOptimizeProduct) onOptimizeProduct(target);
+                }}
+                className="btn-primary"
+                style={{ width: '100%', padding: '10px', fontSize: '13px' }}
+              >
+                <Target size={15} /> Launch Multi-Supplier Optimizer
+              </button>
+
+              {/* All Competing Supplier Offers */}
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                  All Competing Quotes ({(selectedProduct.offers || []).length})
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {(selectedProduct.offers || []).map((off) => {
+                    const isRec = rec && rec.id === off.id;
+                    const costKES = Math.round(off.cost_in_base_currency || off.price_in_base_currency || 0);
+
+                    return (
+                      <div 
+                        key={off.id}
+                        className="panel"
+                        style={{
+                          padding: '10px 14px',
+                          backgroundColor: isRec ? 'var(--forest-light)' : 'var(--bg-elevated)',
+                          borderColor: isRec ? 'var(--forest-border)' : 'var(--border-subtle)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-primary)' }}>
+                            {off.supplier_name}
+                            {isRec && <span className="badge badge-forest" style={{ marginLeft: '6px', fontSize: '8px' }}>Best</span>}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            Stock: {off.quantity_available || off.stock_qty || 0} units · Lead: {off.supplier?.avg_delivery_days ? `${off.supplier.avg_delivery_days}d` : '3d'}
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                            KSh {costKES.toLocaleString()}
+                          </div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                            {off.cost || off.price} {off.currency}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Commercial Margin Simulator */}
+              <div className="panel" style={{ padding: '14px', background: 'var(--bg-elevated)' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <DollarSign size={13} color="var(--copper-text)" /> Commercial Resale Calculator
+                </div>
+
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Target Retail (KES)</label>
+                  <input
+                    type="number"
+                    value={targetSellPrice}
+                    onChange={(e) => setTargetSellPrice(parseFloat(e.target.value) || 0)}
+                    className="font-mono"
+                    style={{ width: '100%', padding: '6px 10px', fontSize: '12px', fontWeight: 600, color: 'var(--copper-text)' }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11px' }}>
+                  <div style={{ background: 'var(--bg-primary)', padding: '6px 8px', borderRadius: 'var(--radius-xs)' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'block' }}>Gross Profit</span>
+                    <span className="font-mono" style={{ fontWeight: 700, color: grossProfit >= 0 ? 'var(--forest-bright)' : 'var(--color-danger-text)' }}>
+                      KSh {Math.round(grossProfit).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-primary)', padding: '6px 8px', borderRadius: 'var(--radius-xs)' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'block' }}>Margin %</span>
+                    <span className="font-mono" style={{ fontWeight: 700, color: grossMarginPct >= 20 ? 'var(--forest-bright)' : 'var(--color-warning-text)' }}>
+                      {grossMarginPct.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
       )}
 
     </div>
