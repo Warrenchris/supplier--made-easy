@@ -1,33 +1,48 @@
 import { useState, useEffect } from 'react';
-import { Target, Zap, DollarSign, TrendingDown, ChevronDown, ChevronUp, AlertCircle, CheckCircle, HelpCircle } from 'lucide-react';
+import { 
+  Target, Zap, DollarSign, TrendingDown, ChevronDown, 
+  CheckCircle2, AlertCircle, Info, ArrowRight, ShieldCheck, 
+  FileCheck, Sparkles, Layers, RefreshCw
+} from 'lucide-react';
 
-export default function ProcurementOptimizer() {
+export default function ProcurementOptimizer({ preselectedProduct }) {
   const [products, setProducts] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedProductId, setSelectedProductId] = useState('');
   const [quantity, setQuantity] = useState(20);
   const [mode, setMode] = useState('best_value');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [showReasoning, setShowReasoning] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
 
   useEffect(() => {
     fetch('/api/canonical-products')
       .then((r) => r.json())
-      .then((data) => setProducts(Array.isArray(data) ? data : []))
+      .then((data) => {
+        const prods = Array.isArray(data) ? data : [];
+        setProducts(prods);
+        if (preselectedProduct && preselectedProduct.id) {
+          setSelectedProductId(preselectedProduct.id);
+        } else if (prods.length > 0 && !selectedProductId) {
+          setSelectedProductId(prods[0].id);
+        }
+      })
       .catch(() => {});
-  }, []);
+  }, [preselectedProduct]);
+
+  const selectedProduct = products.find((p) => p.id === selectedProductId);
 
   const runOptimization = async () => {
-    if (!selectedProduct) return;
+    if (!selectedProductId || !quantity) return;
     setLoading(true);
     setResult(null);
+    setSaveSuccessMsg('');
     try {
       const res = await fetch('/api/procurement/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          canonicalProductId: selectedProduct.id,
-          quantity,
+          canonicalProductId: selectedProductId,
+          quantity: parseInt(quantity) || 1,
           mode
         })
       });
@@ -35,228 +50,343 @@ export default function ProcurementOptimizer() {
       setResult(data);
     } catch (err) {
       setResult({ success: false, error: err.message });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const saveDecision = async () => {
-    if (!selectedProduct || !result?.success) return;
+  useEffect(() => {
+    if (selectedProductId) {
+      runOptimization();
+    }
+  }, [selectedProductId, mode]);
+
+  const handleSaveDecision = async () => {
+    if (!selectedProductId || !result?.success) return;
     try {
       const res = await fetch('/api/procurement/decide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          canonicalProductId: selectedProduct.id,
-          quantity,
+          canonicalProductId: selectedProductId,
+          quantity: parseInt(quantity),
           mode
         })
       });
       const data = await res.json();
       if (data.success) {
-        alert(`Procurement decision saved (ID: ${data.decision.id})`);
+        setSaveSuccessMsg(`Decision snapshot committed successfully (ID: ${data.decision.id})`);
+        setTimeout(() => setSaveSuccessMsg(''), 4000);
       }
     } catch (err) {
       alert('Failed to save decision: ' + err.message);
     }
   };
 
-  const cardStyle = {
-    background: '#181b24', border: '1px solid #2b303d', borderRadius: '12px',
-    padding: '20px', marginBottom: '16px'
-  };
-  const labelStyle = { color: '#949eb2', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '8px' };
-  const inputStyle = {
-    background: '#0f1117', border: '1px solid #2b303d', borderRadius: '8px',
-    color: '#f0f3f8', padding: '10px 14px', fontSize: '14px', width: '100%', outline: 'none'
-  };
-
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h2 style={{ color: '#f0f3f8', fontSize: '22px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-          <Target size={22} style={{ color: '#2dd4bf' }} /> Procurement Optimizer
-        </h2>
-        <p style={{ color: '#949eb2', fontSize: '13px', marginTop: '6px' }}>
-          Enter a product and quantity — the engine calculates the optimal multi-supplier sourcing strategy.
+    <div className="animate-fade" style={{ maxWidth: '1100px', margin: '0 auto' }}>
+      
+      {/* ─── Header ─── */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
+          Algorithmic Sourcing Engine
+        </div>
+        <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+          Multi-Supplier Procurement Optimizer
+        </h1>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+          Determine the most mathematically optimal multi-supplier allocation constrained by inventory, delivery lead times, and reliability.
         </p>
       </div>
 
-      {/* Input Panel */}
-      <div style={cardStyle}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 200px 140px', gap: '16px', alignItems: 'end' }}>
+      {saveSuccessMsg && (
+        <div className="panel" style={{ padding: '12px 16px', marginBottom: '16px', background: 'var(--color-success-bg)', borderColor: 'rgba(47, 107, 82, 0.4)', color: 'var(--color-success-text)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <CheckCircle2 size={16} /> {saveSuccessMsg}
+        </div>
+      )}
+
+      {/* ─── Parameter Configuration Panel ─── */}
+      <div className="panel" style={{ padding: '18px 20px', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 120px 240px 140px', gap: '16px', alignItems: 'end' }}>
+          
+          {/* Product Picker */}
           <div>
-            <div style={labelStyle}>Product</div>
+            <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+              Target Product
+            </label>
             <select
-              value={selectedProduct?.id || ''}
-              onChange={(e) => setSelectedProduct(products.find((p) => p.id === e.target.value) || null)}
-              style={{ ...inputStyle, cursor: 'pointer' }}
+              value={selectedProductId}
+              onChange={(e) => setSelectedProductId(e.target.value)}
+              style={{ width: '100%', cursor: 'pointer', fontWeight: 500 }}
             >
-              <option value="">Select a product…</option>
               {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.canonical_name}</option>
+                <option key={p.id} value={p.id}>
+                  {p.canonical_name} ({p.offers?.length || 0} quotes)
+                </option>
               ))}
             </select>
           </div>
 
+          {/* Quantity */}
           <div>
-            <div style={labelStyle}>Quantity</div>
+            <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+              Batch Qty
+            </label>
             <input
-              type="number" min="1" value={quantity}
-              onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-              style={inputStyle}
+              type="number"
+              min="1"
+              max="10000"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              onBlur={runOptimization}
+              className="font-mono"
+              style={{ width: '100%', textAlign: 'center', fontWeight: 600 }}
             />
           </div>
 
+          {/* Strategy Mode Switcher */}
           <div>
-            <div style={labelStyle}>Mode</div>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              {[['best_value', 'Best Value', Zap], ['lowest_cost', 'Lowest Cost', DollarSign]].map(([key, label, Icon]) => (
-                <button
-                  key={key}
-                  onClick={() => setMode(key)}
-                  style={{
-                    flex: 1, padding: '10px 8px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
-                    background: mode === key ? '#202430' : 'transparent',
-                    border: `1px solid ${mode === key ? '#2dd4bf' : '#2b303d'}`,
-                    color: mode === key ? '#2dd4bf' : '#949eb2'
-                  }}
-                >
-                  <Icon size={13} /> {label}
-                </button>
-              ))}
+            <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+              Optimization Objective
+            </label>
+            <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-primary)', padding: '3px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+              <button
+                type="button"
+                onClick={() => setMode('best_value')}
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  fontSize: '11px',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: mode === 'best_value' ? 'var(--bg-elevated)' : 'transparent',
+                  color: mode === 'best_value' ? 'var(--forest-bright)' : 'var(--text-muted)',
+                  border: `1px solid ${mode === 'best_value' ? 'var(--forest-border)' : 'transparent'}`
+                }}
+              >
+                <Zap size={12} /> Best Value
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('lowest_cost')}
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  fontSize: '11px',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: mode === 'lowest_cost' ? 'var(--bg-elevated)' : 'transparent',
+                  color: mode === 'lowest_cost' ? 'var(--copper-text)' : 'var(--text-muted)',
+                  border: `1px solid ${mode === 'lowest_cost' ? 'var(--copper-border)' : 'transparent'}`
+                }}
+              >
+                <DollarSign size={12} /> Lowest Cost
+              </button>
             </div>
           </div>
 
+          {/* Action Trigger */}
           <div>
             <button
               onClick={runOptimization}
-              disabled={!selectedProduct || loading}
-              style={{
-                width: '100%', padding: '10px', borderRadius: '8px', border: 'none',
-                background: selectedProduct ? 'linear-gradient(135deg, #2dd4bf 0%, #3b82f6 100%)' : '#2b303d',
-                color: selectedProduct ? '#0f1117' : '#949eb2',
-                fontWeight: 700, fontSize: '13px', cursor: selectedProduct ? 'pointer' : 'not-allowed'
-              }}
+              disabled={loading || !selectedProductId}
+              className="btn-primary"
+              style={{ width: '100%', padding: '9px', fontSize: '12px' }}
             >
-              {loading ? 'Optimizing…' : 'Optimize'}
+              {loading ? (
+                <>
+                  <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Computing...
+                </>
+              ) : (
+                <>
+                  <Target size={14} /> Re-Optimize
+                </>
+              )}
             </button>
           </div>
+
         </div>
       </div>
 
-      {/* Results */}
-      {result && !result.success && (
-        <div style={{ ...cardStyle, borderColor: '#ef4444' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444' }}>
-            <AlertCircle size={18} />
-            <span style={{ fontWeight: 600 }}>{result.error}</span>
-          </div>
-          {result.reasoning && (
-            <ul style={{ color: '#949eb2', fontSize: '13px', marginTop: '12px', paddingLeft: '20px' }}>
-              {result.reasoning.map((r, i) => <li key={i} style={{ marginBottom: '4px' }}>{r}</li>)}
-            </ul>
+      {/* ─── Optimization Results Presentation ─── */}
+      {result && (
+        <div className="animate-fade">
+          
+          {/* Failure Case */}
+          {!result.success ? (
+            <div className="panel" style={{ padding: '24px', borderColor: 'rgba(185, 74, 72, 0.4)', background: 'var(--bg-surface)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--color-danger-text)', marginBottom: '8px' }}>
+                <AlertCircle size={20} />
+                <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Procurement Constraint Shortfall</h3>
+              </div>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
+                {result.error}
+              </p>
+              {result.reasoning && (
+                <div style={{ background: 'var(--bg-primary)', padding: '12px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                    Diagnostics
+                  </div>
+                  <ul style={{ paddingLeft: '18px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                    {result.reasoning.map((r, i) => (
+                      <li key={i} style={{ marginBottom: '2px' }}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Success Solution */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              {/* Solution Summary Card */}
+              <div className="panel" style={{ padding: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--forest-text)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Recommended Sourcing Allocation
+                    </div>
+                    <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                      {result.requestedQuantity} Units Total Fulfillment
+                    </h2>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Fulfillment strategy: <strong style={{ color: 'var(--text-secondary)' }}>{mode === 'best_value' ? 'Best Value (Risk-Weighted)' : 'Pure Lowest Acquisition Cost'}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '24px', textAlign: 'right' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Acquisition Cost</div>
+                      <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                        KSh {result.totalCost.toLocaleString()}
+                      </div>
+                    </div>
+
+                    {result.saving > 0 && (
+                      <div>
+                        <div style={{ fontSize: '11px', color: 'var(--copper-text)', textTransform: 'uppercase' }}>Arbitrage Savings</div>
+                        <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--copper-text)', fontFamily: 'var(--font-mono)' }}>
+                          KSh {result.saving.toLocaleString()}
+                          <span style={{ fontSize: '12px', fontWeight: 500, marginLeft: '4px' }}>({result.savingPercent}%)</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Confidence</div>
+                      <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--forest-bright)', fontFamily: 'var(--font-mono)' }}>
+                        {result.confidence}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visual Allocation Breakdown Bars */}
+                <div style={{ paddingTop: '16px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>
+                    Multi-Supplier Allocation Distribution
+                  </div>
+
+                  {/* Multi-segment bar */}
+                  <div style={{ height: '24px', display: 'flex', borderRadius: 'var(--radius-xs)', overflow: 'hidden', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-default)', marginBottom: '12px' }}>
+                    {result.allocations.map((a, idx) => {
+                      const pct = Math.round((a.quantity / result.requestedQuantity) * 100);
+                      const bg = idx === 0 ? 'var(--forest-primary)' : idx === 1 ? 'var(--copper-primary)' : '#4E5A54';
+                      return (
+                        <div
+                          key={a.supplier.id}
+                          style={{
+                            width: `${pct}%`,
+                            backgroundColor: bg,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            color: '#FFFFFF',
+                            fontFamily: 'var(--font-mono)',
+                            borderRight: idx < result.allocations.length - 1 ? '1px solid var(--bg-surface)' : 'none'
+                          }}
+                          title={`${a.supplier.name}: ${a.quantity} units (${pct}%)`}
+                        >
+                          {pct >= 15 ? `${a.quantity} units (${pct}%)` : `${a.quantity}`}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Supplier Allocation Line Items */}
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${result.allocations.length}, 1fr)`, gap: '12px' }}>
+                    {result.allocations.map((a, idx) => (
+                      <div key={a.supplier.id} className="panel" style={{ padding: '12px 14px', background: 'var(--bg-elevated)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-primary)' }}>{a.supplier.name}</span>
+                          <span className="badge badge-forest">{a.score}/100</span>
+                        </div>
+                        <div style={{ fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                          {a.quantity} units × KSh {a.unitCost.toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                          Subtotal: KSh {a.subtotal.toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Alternative Comparison Note */}
+                {result.alternative && (
+                  <div style={{ marginTop: '16px', padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <div style={{ color: 'var(--text-muted)' }}>
+                      <strong>Single-Source Alternative:</strong> {result.alternative.description}
+                    </div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      KSh {result.alternative.totalCost.toLocaleString()}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Decision Explanation & Commitment Action Panel */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
+                
+                <div className="panel" style={{ padding: '18px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                    <Info size={15} color="var(--forest-bright)" /> Sourcing Decision Logic
+                  </div>
+                  <ul style={{ paddingLeft: '18px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    {result.reasoning.map((reason, idx) => (
+                      <li key={idx}>{reason}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="panel" style={{ padding: '18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                      Commit Sourcing Decision
+                    </div>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      Records an immutable snapshot of this procurement allocation for audit, purchase order drafting, and price tracking.
+                    </p>
+                  </div>
+
+                  <button 
+                    onClick={handleSaveDecision}
+                    className="btn-copper"
+                    style={{ width: '100%', marginTop: '14px', fontSize: '12px' }}
+                  >
+                    <FileCheck size={14} /> Commit Snapshot
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
           )}
+
         </div>
       )}
 
-      {result?.success && (
-        <>
-          {/* Allocation Table */}
-          <div style={cardStyle}>
-            <div style={{ ...labelStyle, marginBottom: '14px' }}>Recommended Sourcing Strategy</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #2b303d' }}>
-                  {['Supplier', 'Unit Cost', 'Qty', 'Subtotal', 'Score'].map((h) => (
-                    <th key={h} style={{ textAlign: h === 'Supplier' ? 'left' : 'right', padding: '10px 12px', color: '#949eb2', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {result.allocations.map((alloc, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #1a1d27' }}>
-                    <td style={{ padding: '12px', color: '#f0f3f8', fontWeight: 600 }}>
-                      {alloc.supplier.name}
-                      {i === 0 && <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 8px', borderRadius: '4px', background: '#2dd4bf20', color: '#2dd4bf', fontWeight: 700 }}>RECOMMENDED</span>}
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'right', color: '#f0f3f8', fontFamily: "'IBM Plex Mono', monospace" }}>
-                      KSh {alloc.unitCost.toLocaleString()}
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'right', color: '#f0f3f8', fontWeight: 600 }}>
-                      {alloc.quantity}
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'right', color: '#f0f3f8', fontFamily: "'IBM Plex Mono', monospace" }}>
-                      KSh {alloc.subtotal.toLocaleString()}
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'right' }}>
-                      <span style={{
-                        padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 700,
-                        background: alloc.score >= 85 ? '#2dd4bf20' : alloc.score >= 70 ? '#f59e0b20' : '#ef444420',
-                        color: alloc.score >= 85 ? '#2dd4bf' : alloc.score >= 70 ? '#f59e0b' : '#ef4444'
-                      }}>
-                        {alloc.score}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Summary Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-            {[
-              { label: 'Acquisition Cost', value: `KSh ${result.totalCost.toLocaleString()}`, color: '#f0f3f8' },
-              { label: result.alternative ? `Alt: ${result.alternative.description}` : 'No Alternative', value: result.alternative ? `KSh ${result.alternative.totalCost.toLocaleString()}` : '—', color: '#949eb2' },
-              { label: 'Saving', value: result.saving > 0 ? `KSh ${result.saving.toLocaleString()}` : '—', color: result.saving > 0 ? '#2dd4bf' : '#949eb2' },
-              { label: 'Confidence', value: `${result.confidence}%`, color: result.confidence >= 85 ? '#2dd4bf' : '#f59e0b' }
-            ].map((card, i) => (
-              <div key={i} style={{ ...cardStyle, padding: '16px', marginBottom: 0 }}>
-                <div style={{ color: '#949eb2', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', marginBottom: '6px' }}>{card.label}</div>
-                <div style={{ color: card.color, fontSize: '18px', fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace" }}>{card.value}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Why This Recommendation? */}
-          <div style={cardStyle}>
-            <button
-              onClick={() => setShowReasoning(!showReasoning)}
-              style={{
-                background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, padding: 0
-              }}
-            >
-              <HelpCircle size={15} />
-              {result.allocations.length > 1 ? 'Why split this order?' : 'Why this recommendation?'}
-              {showReasoning ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
-
-            {showReasoning && (
-              <ul style={{ color: '#d1d5db', fontSize: '13px', marginTop: '12px', paddingLeft: '20px', lineHeight: '1.8' }}>
-                {result.reasoning.map((r, i) => (
-                  <li key={i} style={{ marginBottom: '2px' }}>{r}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Save Decision */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-            <button
-              onClick={saveDecision}
-              style={{
-                padding: '10px 24px', borderRadius: '8px', border: '1px solid #2dd4bf',
-                background: '#2dd4bf15', color: '#2dd4bf', fontWeight: 700, fontSize: '13px',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
-              }}
-            >
-              <CheckCircle size={15} /> Confirm & Save Procurement Decision
-            </button>
-          </div>
-        </>
-      )}
     </div>
   );
 }
