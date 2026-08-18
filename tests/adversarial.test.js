@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import assert from 'node:assert/strict';
 import { normalizeListing, calculateSimilarity } from '../server/productIdentityEngine.js';
 import { calculateSupplierIntelligence } from '../server/scoringEngine.js';
@@ -6,6 +9,14 @@ import { initDb, getStore } from '../server/db.js';
 import { productRepo, offerRepo, priceObservationRepo } from '../server/repositories/index.js';
 import { optimizeProcurement } from '../server/procurementOptimizer.js';
 import { calculatePriceTrend } from '../server/priceTrendEngine.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dbFilePath = path.join(__dirname, '../server/data/procurement_db.json');
+let initialDbBackup = null;
+if (fs.existsSync(dbFilePath)) {
+  initialDbBackup = fs.readFileSync(dbFilePath, 'utf8');
+}
 
 let passed = 0;
 let failed = 0;
@@ -283,6 +294,15 @@ await asyncTest('Confidence transitions correctly based on observation count', a
   const trend5 = await calculatePriceTrend(testProd.id, supId);
   assert.equal(trend5.trend7d.confidence, 'high', '5 observations should be high confidence');
 });
+
+// ─── RESTORE CLEAN DATABASE STATE ─────────────────────────────────────────
+if (initialDbBackup !== null) {
+  try {
+    fs.writeFileSync(dbFilePath, initialDbBackup, 'utf8');
+  } catch (err) {
+    console.error('Failed to restore initial DB backup:', err);
+  }
+}
 
 // ─── SUMMARY ────────────────────────────────────────────────────────────────
 
