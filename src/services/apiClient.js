@@ -13,7 +13,7 @@ export class ApiError extends Error {
 }
 
 function getStoredToken() {
-  return localStorage.getItem('sme_auth_token') || localStorage.getItem('auth_token') || 'admin-token';
+  return localStorage.getItem('sme_auth_token') || null;
 }
 
 export async function request(endpoint, options = {}) {
@@ -74,6 +74,11 @@ export async function request(endpoint, options = {}) {
     } else if (typeof data === 'string' && data.trim()) {
       errorMsg = data;
     } else if (response.status === 401) {
+      localStorage.removeItem('sme_auth_token');
+      localStorage.removeItem('sme_user_info');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+      }
       errorMsg = 'Session expired or invalid authentication. Please log in again.';
     } else if (response.status === 403) {
       errorMsg = 'Permission denied. Your current role does not have authority to perform this action.';

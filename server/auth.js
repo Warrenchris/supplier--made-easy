@@ -1,23 +1,57 @@
 import crypto from 'crypto';
-import { getStore, run, get } from './db.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'sme_procurement_secret_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET || 'sme_secure_production_secret_key_2026_uncompromised';
+const TOKEN_EXPIRY_SECONDS = 12 * 60 * 60; // 12 hours
 
-// Standard role accounts
-export const PRESET_USERS = {
-  admin: { id: 'usr_admin', email: 'admin@supplier-made-easy.co.ke', role: 'admin', name: 'Lead Administrator' },
-  buyer: { id: 'usr_buyer', email: 'buyer@supplier-made-easy.co.ke', role: 'buyer', name: 'Senior Buyer' },
-  viewer: { id: 'usr_viewer', email: 'viewer@supplier-made-easy.co.ke', role: 'viewer', name: 'Auditor / Viewer' }
-};
+export function hashPassword(password, salt = 'sme_salt_2026') {
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+}
 
-export function generateToken(user) {
+export function verifyPassword(password, storedHash, salt = 'sme_salt_2026') {
+  try {
+    const calculated = crypto.scryptSync(password, salt, 64).toString('hex');
+    const a = Buffer.from(calculated, 'hex');
+    const b = Buffer.from(storedHash, 'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+// Production system accounts with secure hashed passwords
+export const SYSTEM_USERS = [
+  {
+    id: 'usr_admin',
+    email: 'admin@supplier-made-easy.co.ke',
+    passwordHash: hashPassword('AdminPass2026!'),
+    role: 'admin',
+    name: 'Lead Administrator'
+  },
+  {
+    id: 'usr_buyer',
+    email: 'buyer@supplier-made-easy.co.ke',
+    passwordHash: hashPassword('BuyerPass2026!'),
+    role: 'buyer',
+    name: 'Senior Buyer'
+  },
+  {
+    id: 'usr_viewer',
+    email: 'viewer@supplier-made-easy.co.ke',
+    passwordHash: hashPassword('ViewerPass2026!'),
+    role: 'viewer',
+    name: 'Auditor / Viewer'
+  }
+];
+
+export function generateToken(user, expiresInSeconds = TOKEN_EXPIRY_SECONDS) {
   const payload = {
     id: user.id,
     email: user.email,
     role: user.role,
     name: user.name,
     iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60) // 30 days
+    exp: Math.floor(Date.now() / 1000) + expiresInSeconds
   };
 
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -31,7 +65,7 @@ export function generateToken(user) {
 }
 
 export function verifyToken(token) {
-  if (!token) return null;
+  if (!token || typeof token !== 'string') return null;
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
@@ -42,12 +76,21 @@ export function verifyToken(token) {
       .update(`${header}.${body}`)
       .digest('base64url');
 
-    if (signature !== expectedSig) return null;
+    const sigBuf = Buffer.from(signature);
+    const expSigBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expSigBuf.length || !crypto.timingSafeEqual(sigBuf, expSigBuf)) {
+      return null; // Invalid signature
+    }
 
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-      return null; // Expired
+    if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) {
+      return null; // Expired token
     }
+
+    if (!payload.id || !payload.role) {
+      return null; // Malformed payload
+    }
+
     return payload;
   } catch (err) {
     return null;
@@ -56,7 +99,7 @@ export function verifyToken(token) {
 
 /**
  * Authentication Middleware:
- * Inspects Authorization: Bearer <token> or x-api-key or query param ?token=
+ * Verifies Authorization: Bearer <signed-jwt>
  */
 export function authenticate(req, res, next) {
   const authHeader = req.headers['authorization'] || '';
@@ -70,18 +113,6 @@ export function authenticate(req, res, next) {
     token = apiKey;
   } else if (queryToken) {
     token = queryToken;
-  }
-
-  // Allow preset developer tokens: 'admin-token', 'buyer-token', 'viewer-token'
-  if (token === 'admin-token') {
-    req.user = PRESET_USERS.admin;
-    return next();
-  } else if (token === 'buyer-token') {
-    req.user = PRESET_USERS.buyer;
-    return next();
-  } else if (token === 'viewer-token') {
-    req.user = PRESET_USERS.viewer;
-    return next();
   }
 
   if (token) {
@@ -100,7 +131,7 @@ export function authenticate(req, res, next) {
 export function requireAuth(req, res, next) {
   if (!req.user) {
     return res.status(401).json({
-      error: 'Unauthorized: Authentication required. Provide Authorization: Bearer <token>'
+      error: 'Unauthorized: Valid signed authentication token required. Please log in.'
     });
   }
   next();

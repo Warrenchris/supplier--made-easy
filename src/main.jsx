@@ -8,9 +8,9 @@ import ToastContainer from './components/ToastContainer.jsx'
 // Global Auth Header Interceptor for API communication
 const originalFetch = window.fetch;
 window.fetch = function (url, options = {}) {
-  const token = localStorage.getItem('sme_auth_token') || 'admin-token';
+  const token = localStorage.getItem('sme_auth_token');
   const headers = new Headers(options.headers || {});
-  if (!headers.has('Authorization')) {
+  if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
   return originalFetch(url, { ...options, headers });

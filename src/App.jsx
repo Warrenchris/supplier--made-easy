@@ -10,25 +10,28 @@ import PriceTrendTracker from './components/PriceTrendTracker';
 import StorefrontSync from './components/StorefrontSync';
 import CommandPalette from './components/CommandPalette';
 import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
+import LoginModal from './components/LoginModal';
 import { 
   Package, Layers, GitMerge, Upload, Store, 
   Sliders, Target, TrendingUp, ShoppingCart, 
   Search, Bell, User, ChevronRight, FileText, 
   Download, CheckCircle2, AlertTriangle, ShieldCheck, 
-  ExternalLink, Sparkles, Building2, HelpCircle, Keyboard
+  ExternalLink, Sparkles, Building2, HelpCircle, Keyboard, LogOut
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useToast } from './context/ToastContext';
 
 export default function App() {
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState('overview');
-  const [currentRole, setCurrentRole] = useState(() => {
-    const token = localStorage.getItem('sme_auth_token') || 'admin-token';
-    if (token.startsWith('buyer')) return 'buyer';
-    if (token.startsWith('viewer')) return 'viewer';
-    return 'admin';
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem('sme_user_info');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
   });
+  const [activeTab, setActiveTab] = useState('overview');
   const [optimizerProduct, setOptimizerProduct] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [pendingReviewsCount, setPendingReviewsCount] = useState(0);
@@ -38,6 +41,23 @@ export default function App() {
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const searchInputRef = useRef(null);
+
+  // Handle Token Expiration
+  useEffect(() => {
+    const onAuthExpired = () => {
+      setCurrentUser(null);
+      toast.warning('Your session has expired. Please sign in again to continue.', 'Authentication Required');
+    };
+    window.addEventListener('auth:expired', onAuthExpired);
+    return () => window.removeEventListener('auth:expired', onAuthExpired);
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('sme_auth_token');
+    localStorage.removeItem('sme_user_info');
+    setCurrentUser(null);
+    toast.info('You have been signed out successfully.', 'Session Closed');
+  };
 
   // Fetch background notifications, product catalog for palette, & review counts
   useEffect(() => {

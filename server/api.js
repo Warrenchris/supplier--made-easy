@@ -7,7 +7,7 @@ import { optimizeProcurement } from './procurementOptimizer.js';
 import { calculatePriceTrend, getProductTrends } from './priceTrendEngine.js';
 import { getPublicProductFeed, getInternalEconomicsFeed, getStorefrontSettings, updateStorefrontSettings, calculateRetailPrice } from './storefrontSync.js';
 import { productRepo, offerRepo, supplierRepo, priceObservationRepo, procurementDecisionRepo } from './repositories/index.js';
-import { authenticate, requireAuth, requireRole, generateToken, PRESET_USERS } from './auth.js';
+import { authenticate, requireAuth, requireRole, generateToken, SYSTEM_USERS, verifyPassword } from './auth.js';
 
 const router = express.Router();
 
@@ -28,13 +28,15 @@ router.get('/health', (req, res) => {
 // ─── Authentication & User Session ──────────────────────────────────────────
 
 router.post('/auth/login', (req, res) => {
-  const { role = 'buyer', email, password } = req.body;
-  const user = PRESET_USERS[role] || {
-    id: `usr_${Date.now()}`,
-    email: email || `${role}@supplier-made-easy.co.ke`,
-    role,
-    name: role === 'admin' ? 'Lead Administrator' : role === 'buyer' ? 'Senior Buyer' : 'Catalog Viewer'
-  };
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+
+  const user = SYSTEM_USERS.find((u) => u.email.toLowerCase() === String(email).trim().toLowerCase());
+  if (!user || !verifyPassword(String(password), user.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid email or password. Please verify your credentials.' });
+  }
 
   const token = generateToken(user);
   res.json({
