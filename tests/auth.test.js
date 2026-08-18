@@ -1,8 +1,18 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
-import apiRouter from '../server/api.js';
-import { generateToken, verifyToken, SYSTEM_USERS } from '../server/auth.js';
-import { getStore, query, run } from '../server/db.js';
+
+// Configure test environment variables prior to importing auth modules
+process.env.JWT_SECRET = 'sme_test_jwt_secret_key_for_ci_2026';
+process.env.ADMIN_PASSWORD = 'K7mP9_vL2-xQ8!w';
+process.env.BUYER_PASSWORD = 'B3jR8_nE5-yT1!z';
+process.env.VIEWER_PASSWORD = 'V9wK2_pC7-mN4!x';
+
+const { default: apiRouter } = await import('../server/api.js');
+const { generateToken, verifyToken, SYSTEM_USERS } = await import('../server/auth.js');
+const { getStore, query, run } = await import('../server/db.js');
 
 let passed = 0;
 let failed = 0;
@@ -20,7 +30,7 @@ async function test(name, fn) {
 }
 
 console.log('\n═══════════════════════════════════════════════════════════════');
-console.log('  SECURITY, AUTHENTICATION & REAL JWT ENFORCEMENT TEST SUITE');
+console.log('  SECURITY, AUTHENTICATION & HARDENED SECRETS TEST SUITE');
 console.log('═══════════════════════════════════════════════════════════════\n');
 
 const app = express();
@@ -77,7 +87,7 @@ async function runTests() {
 
   // Test 3: Expired token is rejected
   await test('Expired JWT token is rejected with 401 Unauthorized', async () => {
-    const expiredToken = generateToken(adminUser, -100); // Expired 100 seconds ago
+    const expiredToken = generateToken(adminUser, -100);
     const res = await request('/exchange-rates', {
       method: 'POST',
       headers: {
@@ -89,24 +99,45 @@ async function runTests() {
     assert.equal(res.status, 401);
   });
 
-  // Test 4: Real login flow with invalid password returns 401
-  await test('Login with incorrect password returns 401 Invalid Credentials', async () => {
-    const res = await request('/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@supplier-made-easy.co.ke', password: 'WrongPassword!' })
+  // Test 4: Server startup fails when JWT_SECRET is unset
+  await test('Server refuses to start when JWT_SECRET is unset (exit code 1)', () => {
+    const result = spawnSync(process.execPath, ['-e', "delete process.env.JWT_SECRET; import('./server/auth.js')"], {
+      cwd: process.cwd(),
+      env: { ...process.env, JWT_SECRET: '' }
     });
-    assert.equal(res.status, 401);
-    const body = await res.json();
-    assert.ok(body.error.includes('Invalid'));
+    assert.equal(result.status, 1, 'Expected process to exit with status code 1');
+    const stderr = result.stderr.toString();
+    assert.ok(stderr.includes('JWT_SECRET') || stderr.includes('FATAL'), 'Expected error message regarding missing JWT_SECRET');
   });
 
-  // Test 5: Real login flow with valid password returns signed JWT
-  await test('Login with valid credentials issues signed JWT with 12h expiry', async () => {
+  // Test 5: No hardcoded password strings in src/
+  await test('Absence of hardcoded credential strings in src/ tree', () => {
+    const srcDir = path.join(process.cwd(), 'src');
+    const forbiddenStrings = ['AdminPass2026!', 'BuyerPass2026!', 'ViewerPass2026!', 'K7mP9_vL2-xQ8!w'];
+    
+    function scanDir(dir) {
+      const files = fs.readdirSync(dir);
+      for (const f of files) {
+        const full = path.join(dir, f);
+        if (fs.statSync(full).isDirectory()) {
+          scanDir(full);
+        } else if (f.endsWith('.jsx') || f.endsWith('.js') || f.endsWith('.css') || f.endsWith('.html')) {
+          const content = fs.readFileSync(full, 'utf8');
+          for (const forbidden of forbiddenStrings) {
+            assert.ok(!content.includes(forbidden), `Found forbidden credential string in ${full}`);
+          }
+        }
+      }
+    }
+    scanDir(srcDir);
+  });
+
+  // Test 6: Real login with rotated credentials succeeds
+  await test('Login with rotated valid credentials issues signed JWT with 12h expiry', async () => {
     const res = await request('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@supplier-made-easy.co.ke', password: 'AdminPass2026!' })
+      body: JSON.stringify({ email: 'admin@supplier-made-easy.co.ke', password: 'K7mP9_vL2-xQ8!w' })
     });
     assert.equal(res.status, 200);
     const body = await res.json();
@@ -119,7 +150,33 @@ async function runTests() {
     assert.equal(verified.role, 'admin');
   });
 
-  // Test 6: Viewer token to admin write endpoint returns 403 Forbidden
+  // Test 7: Rate limiting kicks in after repeated failed logins
+  await test('Rate limiter triggers 429 Too Many Requests after 5 failed attempts', async () => {
+    const targetEmail = `brute_force_${Date.now()}@supplier-made-easy.co.ke`;
+    
+    // 5 failed attempts
+    for (let i = 0; i < 5; i++) {
+      const res = await request('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail, password: 'wrong_password_attempt' })
+      });
+      assert.equal(res.status, 401);
+    }
+
+    // 6th attempt should be blocked with 429
+    const rateLimitedRes = await request('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: targetEmail, password: 'any_password' })
+    });
+    assert.equal(rateLimitedRes.status, 429, 'Expected 429 Too Many Requests');
+    assert.equal(rateLimitedRes.headers.get('retry-after'), '900');
+    const body = await rateLimitedRes.json();
+    assert.ok(body.error.includes('Too many failed login attempts'));
+  });
+
+  // Test 8: Viewer token to admin write endpoint returns 403 Forbidden
   await test('Viewer token POST /api/exchange-rates is rejected with 403 Forbidden', async () => {
     const res = await request('/exchange-rates', {
       method: 'POST',
@@ -134,7 +191,7 @@ async function runTests() {
     assert.ok(body.error.includes('Forbidden'));
   });
 
-  // Test 7: Admin token to admin write endpoint succeeds with 200 & logs audit
+  // Test 9: Admin token to admin write endpoint succeeds with 200 & logs audit
   await test('Admin token POST /api/exchange-rates succeeds with 200 & writes audit log', async () => {
     const res = await request('/exchange-rates', {
       method: 'POST',
@@ -151,7 +208,7 @@ async function runTests() {
     assert.equal(logs[0].user_id, adminUser.id);
   });
 
-  // Test 8: Buyer token can approve match suggestions
+  // Test 10: Buyer token can approve match suggestions
   await test('Buyer token can approve match suggestion and logs user_id', async () => {
     const sugId = `sug_${Date.now()}`;
     const rlId = `rl_${Date.now()}`;
@@ -172,7 +229,7 @@ async function runTests() {
     assert.equal(logs[0].user_id, buyerUser.id);
   });
 
-  // Test 9: Split migration moves offers and price observations to new canonical product
+  // Test 11: Split migration moves offers and price observations to new canonical product
   await test('Product split migrates offers & observations to new canonical product', async () => {
     const rlId = `rl_split_${Date.now()}`;
     const oldCpId = `cp_old_${Date.now()}`;

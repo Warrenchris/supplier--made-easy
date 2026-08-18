@@ -11,6 +11,10 @@ services:
     environment:
       - PORT=3001
       - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET:-sme_prod_jwt_secret_99f38c6b74e840d287413693e50ab11e9a263884cb06}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-K7mP9_vL2-xQ8!w}
+      - BUYER_PASSWORD=${BUYER_PASSWORD:-B3jR8_nE5-yT1!z}
+      - VIEWER_PASSWORD=${VIEWER_PASSWORD:-V9wK2_pC7-mN4!x}
     volumes:
       - supplier_data:/app/server/data
     restart: unless-stopped

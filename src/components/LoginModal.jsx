@@ -1,41 +1,11 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ShieldCheck, Key, ArrowRight, RefreshCw, User, Package, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Mail, Key, ArrowRight, RefreshCw, AlertCircle } from 'lucide-react';
 import api from '../services/apiClient';
 import { useToast } from '../context/ToastContext';
 
-const PRESET_CREDENTIALS = [
-  {
-    role: 'admin',
-    label: 'Lead Administrator',
-    badge: 'Full Access',
-    email: 'admin@supplier-made-easy.co.ke',
-    password: 'AdminPass2026!',
-    color: 'var(--forest-bright)',
-    bg: 'var(--forest-light)'
-  },
-  {
-    role: 'buyer',
-    label: 'Senior Buyer',
-    badge: 'Operations',
-    email: 'buyer@supplier-made-easy.co.ke',
-    password: 'BuyerPass2026!',
-    color: 'var(--copper-bright)',
-    bg: 'var(--copper-light)'
-  },
-  {
-    role: 'viewer',
-    label: 'Auditor / Viewer',
-    badge: 'Read Only',
-    email: 'viewer@supplier-made-easy.co.ke',
-    password: 'ViewerPass2026!',
-    color: 'var(--text-muted)',
-    bg: 'var(--bg-elevated)'
-  }
-];
-
 export default function LoginModal({ onLoginSuccess }) {
-  const [email, setEmail] = useState('admin@supplier-made-easy.co.ke');
-  const [password, setPassword] = useState('AdminPass2026!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const toast = useToast();
@@ -70,12 +40,6 @@ export default function LoginModal({ onLoginSuccess }) {
     }
   };
 
-  const handleQuickFill = (preset) => {
-    setEmail(preset.email);
-    setPassword(preset.password);
-    setErrorMsg('');
-  };
-
   return (
     <div 
       style={{
@@ -94,7 +58,7 @@ export default function LoginModal({ onLoginSuccess }) {
       <div
         className="panel animate-fade"
         style={{
-          maxWidth: '460px',
+          maxWidth: '420px',
           width: '100%',
           padding: '32px 28px',
           backgroundColor: 'var(--bg-surface)',
@@ -124,7 +88,7 @@ export default function LoginModal({ onLoginSuccess }) {
             Supplier Made Easy
           </h2>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            Enterprise Procurement Intelligence & Operations OS
+            Enterprise Procurement Intelligence Operating System
           </div>
         </div>
 
@@ -161,9 +125,10 @@ export default function LoginModal({ onLoginSuccess }) {
               <input
                 type="email"
                 required
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@company.com"
+                placeholder="name@supplier-made-easy.co.ke"
                 style={{ width: '100%', paddingLeft: '32px' }}
               />
             </div>
@@ -178,6 +143,7 @@ export default function LoginModal({ onLoginSuccess }) {
               <input
                 type="password"
                 required
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
@@ -203,46 +169,6 @@ export default function LoginModal({ onLoginSuccess }) {
             )}
           </button>
         </form>
-
-        {/* Quick Role Fill Section for Testing & Operational Switching */}
-        <div style={{ marginTop: '24px', paddingTop: '18px', borderTop: '1px solid var(--border-subtle)' }}>
-          <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px', textAlign: 'center' }}>
-            Or Select Pre-Configured Role Credentials
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {PRESET_CREDENTIALS.map((p) => (
-              <button
-                key={p.role}
-                type="button"
-                onClick={() => handleQuickFill(p)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-xs)',
-                  background: email === p.email ? 'var(--bg-active)' : 'var(--bg-elevated)',
-                  border: `1px solid ${email === p.email ? p.color : 'var(--border-subtle)'}`,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <User size={13} color={p.color} />
-                  <div>
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>{p.label}</div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{p.email}</div>
-                  </div>
-                </div>
-                <span style={{ fontSize: '10px', fontWeight: 600, color: p.color, background: p.bg, padding: '2px 6px', borderRadius: '3px' }}>
-                  {p.badge}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
 
       </div>
     </div>

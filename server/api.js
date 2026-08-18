@@ -25,18 +25,59 @@ router.get('/health', (req, res) => {
   });
 });
 
-// ─── Authentication & User Session ──────────────────────────────────────────
+// ─── Authentication & User Session (with Rate Limiting) ─────────────────────
+
+const loginAttempts = new Map();
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_FAILED_ATTEMPTS = 5;
+
+function isRateLimited(key) {
+  const now = Date.now();
+  const attempts = (loginAttempts.get(key) || []).filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
+  loginAttempts.set(key, attempts);
+  return attempts.length >= MAX_FAILED_ATTEMPTS;
+}
+
+function recordFailedAttempt(key) {
+  const now = Date.now();
+  const attempts = (loginAttempts.get(key) || []).filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
+  attempts.push(now);
+  loginAttempts.set(key, attempts);
+}
+
+function clearFailedAttempts(key) {
+  loginAttempts.delete(key);
+}
 
 router.post('/auth/login', (req, res) => {
+  const ip = req.ip || req.socket?.remoteAddress || '127.0.0.1';
+  const rawEmail = req.body?.email ? String(req.body.email).toLowerCase().trim() : '';
+  const emailKey = rawEmail ? `email:${rawEmail}` : null;
+  const ipKey = `ip:${ip}`;
+
+  // Check rate limits on both IP and Email identifier
+  if (isRateLimited(ipKey) || (emailKey && isRateLimited(emailKey))) {
+    res.setHeader('Retry-After', '900');
+    return res.status(429).json({
+      error: 'Too many failed login attempts. Access is temporarily throttled. Please try again in 15 minutes.'
+    });
+  }
+
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
 
-  const user = SYSTEM_USERS.find((u) => u.email.toLowerCase() === String(email).trim().toLowerCase());
+  const user = SYSTEM_USERS.find((u) => u.email.toLowerCase() === rawEmail);
   if (!user || !verifyPassword(String(password), user.passwordHash)) {
+    recordFailedAttempt(ipKey);
+    if (emailKey) recordFailedAttempt(emailKey);
     return res.status(401).json({ error: 'Invalid email or password. Please verify your credentials.' });
   }
+
+  // Clear counters on successful authentication
+  clearFailedAttempts(ipKey);
+  if (emailKey) clearFailedAttempts(emailKey);
 
   const token = generateToken(user);
   res.json({

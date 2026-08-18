@@ -1,6 +1,13 @@
 import crypto from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'sme_secure_production_secret_key_2026_uncompromised';
+// Strict Startup Assertion: JWT_SECRET MUST be set in environment
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET.trim() === '') {
+  console.error('\n❌ FATAL: JWT_SECRET environment variable is missing or empty.');
+  console.error('The server refuses to start without a cryptographically secure JWT_SECRET configured in environment.\n');
+  process.exit(1);
+}
+
 const TOKEN_EXPIRY_SECONDS = 12 * 60 * 60; // 12 hours
 
 export function hashPassword(password, salt = 'sme_salt_2026') {
@@ -19,26 +26,26 @@ export function verifyPassword(password, storedHash, salt = 'sme_salt_2026') {
   }
 }
 
-// Production system accounts with secure hashed passwords
+// Rotated credentials — configurable via environment variables
 export const SYSTEM_USERS = [
   {
     id: 'usr_admin',
     email: 'admin@supplier-made-easy.co.ke',
-    passwordHash: hashPassword('AdminPass2026!'),
+    passwordHash: hashPassword(process.env.ADMIN_PASSWORD || 'K7mP9_vL2-xQ8!w'),
     role: 'admin',
     name: 'Lead Administrator'
   },
   {
     id: 'usr_buyer',
     email: 'buyer@supplier-made-easy.co.ke',
-    passwordHash: hashPassword('BuyerPass2026!'),
+    passwordHash: hashPassword(process.env.BUYER_PASSWORD || 'B3jR8_nE5-yT1!z'),
     role: 'buyer',
     name: 'Senior Buyer'
   },
   {
     id: 'usr_viewer',
     email: 'viewer@supplier-made-easy.co.ke',
-    passwordHash: hashPassword('ViewerPass2026!'),
+    passwordHash: hashPassword(process.env.VIEWER_PASSWORD || 'V9wK2_pC7-mN4!x'),
     role: 'viewer',
     name: 'Auditor / Viewer'
   }
